@@ -1,0 +1,29 @@
+# Windows Automation & UI Control
+pywin32>=312
+uiautomation>=2.0.29
+pyautogui>=0.9.54
+pygetwindow>=0.0.9
+psutil>=7.2.0
+pynput>=1.8.2
+pyperclip>=1.11.0
+
+# Desktop GUI & System Tray
+PySide6>=6.12.0
+Pillow>=13.0.0
+
+# Voice Capture & Speech-to-Text
+SpeechRecognition>=3.17.0
+sounddevice>=0.5.6
+numpy>=2.4.0
+
+# Text-to-Speech (Offline SAPI5 & Cloud)
+pyttsx3>=2.99
+requests>=2.34.0
+
+# AI Brain & Configuration
+pydantic>=2.14.0
+python-dotenv>=1.0.1
+google-genai>=2.34.0
+
+# Packaging
+pyinstaller>=6.22.0
