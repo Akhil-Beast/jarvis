@@ -77,6 +77,12 @@ class SettingsDialog(QDialog):
         self.spin_rate.setValue(config.speech_rate)
         l_voice.addWidget(self.spin_rate)
 
+        l_voice.addWidget(QLabel("TTS Engine:"))
+        self.cmb_tts = QComboBox()
+        self.cmb_tts.addItems(["sapi5", "omnivoice", "elevenlabs"])
+        self.cmb_tts.setCurrentText(config.tts_engine)
+        l_voice.addWidget(self.cmb_tts)
+
         # ---- Microphone Device ----
         l_voice.addWidget(QLabel("Microphone Input Device:"))
         self.cmb_mic = QComboBox()
@@ -156,6 +162,7 @@ class SettingsDialog(QDialog):
         config.wake_word_secondary = self.txt_wake2.text().strip()
         config.continuous_listening = self.chk_continuous.isChecked()
         config.speech_rate = self.spin_rate.value()
+        config.tts_engine = self.cmb_tts.currentText()
         config.ai_provider = self.cmb_provider.currentText()
         config.gemini_api_key = self.txt_gemini.text().strip()
         config.openai_api_key = self.txt_openai.text().strip()

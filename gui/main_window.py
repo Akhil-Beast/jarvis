@@ -14,6 +14,7 @@ from core.tts_engine import tts
 from core.brain import brain
 from automation.orchestrator import orchestrator
 from gui.hud_visualizer import ArcReactorHUD
+from gui.heygem_avatar import HeyGemAvatarWidget
 from gui.system_tray import SystemTrayManager
 from gui.settings_dialog import SettingsDialog
 
@@ -188,15 +189,23 @@ class MainWindow(QMainWindow):
 
         layout.addLayout(header)
 
-        # 2. Central Arc-Reactor Visualizer & Voice Transcript
+        # 2. Central Arc-Reactor & HeyGem Digital Avatar Visualizer
         center_card = QFrame()
         center_card.setObjectName("card")
         center_layout = QVBoxLayout(center_card)
         center_layout.setContentsMargins(12, 10, 12, 12)
         center_layout.setAlignment(Qt.AlignCenter)
 
+        visual_container = QHBoxLayout()
+        visual_container.setAlignment(Qt.AlignCenter)
+
         self.hud = ArcReactorHUD()
-        center_layout.addWidget(self.hud)
+        visual_container.addWidget(self.hud)
+
+        self.avatar = HeyGemAvatarWidget()
+        visual_container.addWidget(self.avatar)
+
+        center_layout.addLayout(visual_container)
 
         self.lbl_transcript = QLabel("Say 'Hey Assistant' or 'Jarvis' to execute commands...")
         self.lbl_transcript.setAlignment(Qt.AlignCenter)
@@ -264,6 +273,7 @@ class MainWindow(QMainWindow):
     def emergency_stop(self):
         safety.trigger_emergency_stop()
         self.hud.set_state("STOPPED")
+        self.avatar.set_state("STANDBY")
         self.lbl_status.setText("🛑 EMERGENCY STOP TRIGGERED (Tasks Halted)")
         self.lbl_status.setStyleSheet("font-size: 12px; color: #ef4444; font-weight: bold;")
         tts.speak("Emergency stop engaged.", interrupt=True)
@@ -280,6 +290,7 @@ class MainWindow(QMainWindow):
             self.lbl_status.setText("● ONLINE & LISTENING (Speak voice commands)")
             self.lbl_status.setStyleSheet("font-size: 12px; color: #38bdf8; font-weight: bold;")
             self.hud.set_state("LISTENING")
+            self.avatar.set_state("LISTENING")
             tts.speak("Online, sir.")
         else:
             self.btn_toggle.setText("ACTIVATE LISTENING")
@@ -287,19 +298,24 @@ class MainWindow(QMainWindow):
             self.lbl_status.setText("● SYSTEM STANDBY (Press Ctrl+Alt+Space to Activate)")
             self.lbl_status.setStyleSheet("font-size: 12px; color: #94a3b8;")
             self.hud.set_state("STANDBY")
+            self.avatar.set_state("STANDBY")
         self.btn_toggle.setStyle(self.btn_toggle.style())
 
     def _on_audio_level(self, level: float):
         self.hud.set_audio_level(level)
+        self.avatar.set_audio_level(level)
 
     def _on_tts_state(self, is_speaking: bool):
         if is_speaking:
             self.hud.set_state("SPEAKING")
+            self.avatar.set_state("SPEAKING")
         else:
             if self.voice_listener.is_active:
                 self.hud.set_state("LISTENING")
+                self.avatar.set_state("LISTENING")
             else:
                 self.hud.set_state("STANDBY")
+                self.avatar.set_state("STANDBY")
 
     def _on_transcript_received(self, text: str):
         self.lbl_transcript.setText(f"You said: \"{text}\"")

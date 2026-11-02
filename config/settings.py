@@ -4,6 +4,16 @@ import sys
 from pathlib import Path
 from pydantic import BaseModel, Field
 
+# Auto-load .env file from project root (safe — never overwrites existing env vars)
+_env_file = Path(__file__).resolve().parent.parent / ".env"
+if _env_file.exists():
+    for _line in _env_file.read_text(encoding="utf-8").splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _, _v = _line.partition("=")
+            if _k.strip() and not os.environ.get(_k.strip()):
+                os.environ[_k.strip()] = _v.strip()
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_FILE = BASE_DIR / "config" / "config.json"
 
@@ -20,7 +30,7 @@ class AppConfig(BaseModel):
     gemini_api_key: str = ""
     openai_api_key: str = ""
     anthropic_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.8-flash"
     openai_model: str = "gpt-4o"
 
     # Voice / TTS
@@ -53,9 +63,17 @@ class SettingsManager:
     def load(self) -> AppConfig:
         if self.config_path.exists():
             try:
-                with open(self.config_path, "r", encoding="utf-8") as f:
+                with open(self.config_path, "r", encoding="utf-8-sig") as f:
                     data = json.load(f)
-                    return AppConfig(**data)
+                    cfg = AppConfig(**data)
+                    # Fill any blank keys from environment (e.g. if .env has newer key)
+                    if not cfg.gemini_api_key:
+                        cfg.gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+                    if not cfg.openai_api_key:
+                        cfg.openai_api_key = os.getenv("OPENAI_API_KEY", "")
+                    if not cfg.elevenlabs_api_key:
+                        cfg.elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY", "")
+                    return cfg
             except Exception as e:
                 print(f"[Settings] Failed to parse config.json, using defaults: {e}")
         

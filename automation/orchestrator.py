@@ -112,6 +112,18 @@ class TaskOrchestrator:
                     system_controller.lock_workstation()
                 return True
 
+            elif action == "shell":
+                # Execute a safe shell command (pre-approved actions only)
+                cmd = step.get("command", "")
+                allowed_prefixes = ("notepad", "explorer", "calc", "mspaint", "cmd /c echo", "powershell -Command New-Item")
+                if any(cmd.lower().startswith(p) for p in allowed_prefixes):
+                    import subprocess
+                    subprocess.Popen(cmd, shell=True)
+                    return True
+                else:
+                    logger.warning(f"[Orchestrator] Shell command blocked (not in allowlist): {cmd}")
+                    return False
+
             elif action == "speak":
                 text = step.get("text", "")
                 tts.speak(text)

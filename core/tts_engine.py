@@ -4,6 +4,7 @@ import time
 import requests
 from config.settings import config
 from core.safety import logger, safety
+from core.omnivoice_engine import omnivoice_engine
 
 class TTSEngine:
     """Thread-safe Text-to-Speech Engine supporting SAPI5 (offline) & ElevenLabs."""
@@ -53,6 +54,8 @@ class TTSEngine:
             try:
                 if config.tts_engine == "elevenlabs" and config.elevenlabs_api_key:
                     self._speak_elevenlabs(text)
+                elif config.tts_engine == "omnivoice" and omnivoice_engine.is_available:
+                    self._speak_omnivoice(text)
                 else:
                     self._speak_sapi5(text)
             except Exception as e:
@@ -65,6 +68,23 @@ class TTSEngine:
             finally:
                 self._notify(False)
                 self._speech_queue.task_done()
+
+    def _speak_omnivoice(self, text: str):
+        import tempfile
+        import os
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            wav_path = f.name
+        try:
+            if omnivoice_engine.synthesize_to_file(text, wav_path):
+                import subprocess
+                subprocess.run(["powershell", "-c", f'(New-Object Media.SoundPlayer "{wav_path}").PlaySync()'], check=False)
+            else:
+                self._speak_sapi5(text)
+        finally:
+            try:
+                os.remove(wav_path)
+            except Exception:
+                pass
 
     def _speak_sapi5(self, text: str):
         import pyttsx3
