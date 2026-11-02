@@ -44,56 +44,62 @@ class VoiceListener:
             self.on_state_change(self.is_active)
 
     def _listen_loop(self):
-        mic = None
-        try:
-            mic = sr.Microphone()
-        except Exception as e:
-            logger.error(f"[VoiceListener] Microphone initialization failed: {e}")
-            return
-
-        with mic as source:
+        while self._running:
+            mic = None
             try:
-                self._recognizer.adjust_for_ambient_noise(source, duration=1.0)
+                mic = sr.Microphone()
             except Exception as e:
-                logger.warning(f"[VoiceListener] Ambient noise calibration warning: {e}")
+                logger.error(f"[VoiceListener] Microphone initialization failed: {e}. Retrying in 3s...")
+                time.sleep(3.0)
+                continue
 
-            while self._running:
-                if not self.is_active:
-                    time.sleep(0.1)
-                    if self.on_level:
-                        self.on_level(0.0)
-                    continue
+            try:
+                with mic as source:
+                    try:
+                        self._recognizer.adjust_for_ambient_noise(source, duration=0.8)
+                    except Exception as e:
+                        logger.warning(f"[VoiceListener] Ambient noise calibration warning: {e}")
 
-                if safety.is_aborted:
-                    time.sleep(0.1)
-                    continue
+                    while self._running:
+                        if not self.is_active:
+                            time.sleep(0.1)
+                            if self.on_level:
+                                self.on_level(0.0)
+                            continue
 
-                try:
-                    # Capture phrase with short timeout
-                    audio = self._recognizer.listen(source, timeout=1.5, phrase_time_limit=10.0)
-                    
-                    # Calculate approximate energy for UI feedback
-                    raw_data = audio.get_raw_data()
-                    if raw_data:
-                        samples = np.frombuffer(raw_data, dtype=np.int16)
-                        rms = float(np.sqrt(np.mean(samples.astype(np.float32)**2)))
-                        normalized_level = min(1.0, rms / 3000.0)
-                        if self.on_level:
-                            self.on_level(normalized_level)
+                        if safety.is_aborted:
+                            time.sleep(0.1)
+                            continue
 
-                    # Transcribe
-                    text = self._recognize(audio)
-                    if text and text.strip():
-                        logger.info(f"[VoiceListener] Transcribed: '{text}'")
-                        self._process_recognized_text(text.strip())
+                        try:
+                            # Capture phrase with short timeout
+                            audio = self._recognizer.listen(source, timeout=1.5, phrase_time_limit=10.0)
+                            
+                            # Calculate approximate energy for UI feedback
+                            raw_data = audio.get_raw_data()
+                            if raw_data:
+                                samples = np.frombuffer(raw_data, dtype=np.int16)
+                                rms = float(np.sqrt(np.mean(samples.astype(np.float32)**2)))
+                                normalized_level = min(1.0, rms / 3000.0)
+                                if self.on_level:
+                                    self.on_level(normalized_level)
 
-                except sr.WaitTimeoutError:
-                    if self.on_level:
-                        self.on_level(0.0)
-                    continue
-                except Exception as e:
-                    # Ignore transient audio capture errors
-                    time.sleep(0.05)
+                            # Transcribe
+                            text = self._recognize(audio)
+                            if text and text.strip():
+                                logger.info(f"[VoiceListener] Transcribed: '{text}'")
+                                self._process_recognized_text(text.strip())
+
+                        except sr.WaitTimeoutError:
+                            if self.on_level:
+                                self.on_level(0.0)
+                            continue
+                        except Exception as e:
+                            # Ignore transient audio capture errors
+                            time.sleep(0.05)
+            except Exception as e:
+                logger.error(f"[VoiceListener] Microphone stream error: {e}. Reinitializing in 2s...")
+                time.sleep(2.0)
 
     def _recognize(self, audio) -> str:
         """Perform speech to text."""
