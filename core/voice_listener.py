@@ -5,27 +5,45 @@ import speech_recognition as sr
 from config.settings import config
 from core.safety import logger, safety
 
+
 class VoiceListener:
-    """Continuous microphone listener with RMS energy metering and wake-word parsing."""
+    """Continuous microphone listener with RMS energy metering and wake-word parsing.
+
+    Fallback: if mic_device_index = -99, runs in TEXT INPUT mode — reads
+    commands from stdin (for debugging without a working microphone).
+    """
+
+    TEXT_MODE_DEVICE = -99   # Magic value to enable text-input fallback
 
     def __init__(self, on_transcript=None, on_level=None, on_state_change=None):
         self.on_transcript = on_transcript
         self.on_level = on_level
         self.on_state_change = on_state_change
-        
-        self.is_active = False          # Master ON/OFF toggle
+
+        self.is_active = False           # Master ON/OFF toggle
         self.is_listening_speech = False # Currently actively hearing speech
         self._running = False
         self._thread = None
         self._recognizer = sr.Recognizer()
-        self._recognizer.dynamic_energy_threshold = True
+        # Use fixed threshold unless explicitly set to dynamic
+        self._recognizer.dynamic_energy_threshold = config.dynamic_energy_threshold
         self._recognizer.energy_threshold = config.audio_energy_threshold
+        logger.info(f"[VoiceListener] energy_threshold={config.audio_energy_threshold} "
+                    f"dynamic={config.dynamic_energy_threshold} "
+                    f"device_index={config.mic_device_index}")
 
+    # ------------------------------------------------------------------ #
+    # Public API                                                           #
+    # ------------------------------------------------------------------ #
     def start(self):
         self._running = True
-        self._thread = threading.Thread(target=self._listen_loop, daemon=True)
+        if config.mic_device_index == self.TEXT_MODE_DEVICE:
+            self._thread = threading.Thread(target=self._text_input_loop, daemon=True)
+            logger.info("[VoiceListener] Starting in TEXT INPUT mode (no microphone).")
+        else:
+            self._thread = threading.Thread(target=self._listen_loop, daemon=True)
+            logger.info("[VoiceListener] Starting audio background worker.")
         self._thread.start()
-        logger.info("[VoiceListener] Audio background worker started.")
 
     def stop(self):
         self._running = False
@@ -33,7 +51,7 @@ class VoiceListener:
     def toggle(self) -> bool:
         """Toggle master assistant listening state."""
         self.is_active = not self.is_active
-        logger.info(f"[VoiceListener] Assistant Active State toggled to: {self.is_active}")
+        logger.info(f"[VoiceListener] Active={self.is_active}")
         if self.on_state_change:
             self.on_state_change(self.is_active)
         return self.is_active
@@ -43,22 +61,53 @@ class VoiceListener:
         if self.on_state_change:
             self.on_state_change(self.is_active)
 
+    # ------------------------------------------------------------------ #
+    # Text-input fallback loop (no mic required)                           #
+    # ------------------------------------------------------------------ #
+    def _text_input_loop(self):
+        import sys
+        print("\n[JARVIS TEXT MODE] Type a command and press Enter (or 'quit' to exit):")
+        while self._running:
+            if not self.is_active:
+                time.sleep(0.2)
+                continue
+            try:
+                line = input(">>> ").strip()
+            except EOFError:
+                break
+            if not line:
+                continue
+            if line.lower() == "quit":
+                self._running = False
+                break
+            logger.info(f"[VoiceListener/Text] Input: '{line}'")
+            self._process_recognized_text(line)
+
+    # ------------------------------------------------------------------ #
+    # Main audio loop                                                      #
+    # ------------------------------------------------------------------ #
     def _listen_loop(self):
+        device_index = config.mic_device_index if config.mic_device_index >= 0 else None
         while self._running:
             mic = None
             try:
-                mic = sr.Microphone()
+                mic = sr.Microphone(device_index=device_index, sample_rate=16000)
             except Exception as e:
-                logger.error(f"[VoiceListener] Microphone initialization failed: {e}. Retrying in 3s...")
+                logger.error(f"[VoiceListener] Microphone init failed (device={device_index}): {e}. Retrying in 3s…")
                 time.sleep(3.0)
                 continue
 
             try:
                 with mic as source:
-                    try:
-                        self._recognizer.adjust_for_ambient_noise(source, duration=0.8)
-                    except Exception as e:
-                        logger.warning(f"[VoiceListener] Ambient noise calibration warning: {e}")
+                    # Only do ambient calibration if dynamic threshold is ON
+                    if config.dynamic_energy_threshold:
+                        try:
+                            self._recognizer.adjust_for_ambient_noise(source, duration=0.8)
+                            logger.info(f"[VoiceListener] Calibrated threshold: {self._recognizer.energy_threshold:.1f}")
+                        except Exception as e:
+                            logger.warning(f"[VoiceListener] Ambient calibration warning: {e}")
+                    else:
+                        logger.info(f"[VoiceListener] Fixed threshold: {self._recognizer.energy_threshold}")
 
                     while self._running:
                         if not self.is_active:
@@ -72,14 +121,17 @@ class VoiceListener:
                             continue
 
                         try:
-                            # Capture phrase with short timeout
-                            audio = self._recognizer.listen(source, timeout=1.5, phrase_time_limit=10.0)
-                            
-                            # Calculate approximate energy for UI feedback
+                            audio = self._recognizer.listen(
+                                source,
+                                timeout=1.5,
+                                phrase_time_limit=10.0
+                            )
+
+                            # Energy / RMS for UI waveform
                             raw_data = audio.get_raw_data()
                             if raw_data:
                                 samples = np.frombuffer(raw_data, dtype=np.int16)
-                                rms = float(np.sqrt(np.mean(samples.astype(np.float32)**2)))
+                                rms = float(np.sqrt(np.mean(samples.astype(np.float32) ** 2)))
                                 normalized_level = min(1.0, rms / 3000.0)
                                 if self.on_level:
                                     self.on_level(normalized_level)
@@ -95,26 +147,32 @@ class VoiceListener:
                                 self.on_level(0.0)
                             continue
                         except Exception as e:
-                            # Ignore transient audio capture errors
+                            logger.debug(f"[VoiceListener] Listen error (transient): {e}")
                             time.sleep(0.05)
+
             except Exception as e:
-                logger.error(f"[VoiceListener] Microphone stream error: {e}. Reinitializing in 2s...")
+                logger.error(f"[VoiceListener] Microphone stream error: {e}. Reinitializing in 2s…")
                 time.sleep(2.0)
 
+    # ------------------------------------------------------------------ #
+    # Speech-to-Text                                                       #
+    # ------------------------------------------------------------------ #
     def _recognize(self, audio) -> str:
-        """Perform speech to text."""
+        """Perform speech to text — Google online first, SAPI5/Sphinx offline fallback."""
         try:
-            # Free cloud STT with zero setup
             return self._recognizer.recognize_google(audio)
         except sr.UnknownValueError:
             return ""
         except sr.RequestError as e:
-            logger.warning(f"[VoiceListener] Google STT unavailable ({e}), trying Windows SAPI/Sphinx fallback.")
+            logger.warning(f"[VoiceListener] Google STT unavailable ({e}), trying offline fallback.")
             try:
                 return self._recognizer.recognize_sphinx(audio)
             except Exception:
                 return ""
 
+    # ------------------------------------------------------------------ #
+    # Wake-word parsing and command dispatch                               #
+    # ------------------------------------------------------------------ #
     def _process_recognized_text(self, text: str):
         text_lower = text.lower()
         wake1 = config.wake_word.lower()
@@ -132,7 +190,6 @@ class VoiceListener:
             command = text[idx:].strip()
             is_triggered = True
         elif config.continuous_listening:
-            # When active and continuous listening is enabled, any phrase is treated as a command
             is_triggered = True
 
         # Clean leading punctuation

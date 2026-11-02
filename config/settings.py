@@ -31,11 +31,15 @@ class AppConfig(BaseModel):
     elevenlabs_api_key: str = ""
     elevenlabs_voice_id: str = "pNInz6obpgDQGcFmaJgB"  # British voice (Adam)
 
+    # Audio / Microphone
+    mic_device_index: int = -1          # -1 = system default; set to specific index from mic_test.py
+    dynamic_energy_threshold: bool = False  # False = use fixed threshold (more reliable)
+    audio_energy_threshold: int = 300   # Lower = more sensitive; raise if false triggers occur
+
     # Behavior & Safety
     require_confirmation_for_destructive: bool = True
     start_with_windows: bool = False
     minimize_to_tray_on_close: bool = True
-    audio_energy_threshold: int = 400
 
     # User Profile
     user_name: str = "Sir"
