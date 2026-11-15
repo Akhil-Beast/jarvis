@@ -30,7 +30,7 @@ class AppConfig(BaseModel):
     gemini_api_key: str = ""
     openai_api_key: str = ""
     anthropic_api_key: str = ""
-    gemini_model: str = "gemini-3.8-flash"
+    gemini_model: str = "gemini-3.5-flash-lite"
     openai_model: str = "gpt-4o"
 
     # Voice / TTS

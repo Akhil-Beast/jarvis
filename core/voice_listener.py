@@ -28,6 +28,9 @@ class VoiceListener:
         # Use fixed threshold unless explicitly set to dynamic
         self._recognizer.dynamic_energy_threshold = config.dynamic_energy_threshold
         self._recognizer.energy_threshold = config.audio_energy_threshold
+        # Fast endpointing: decrease silence wait time from default 0.8s/0.5s to 0.5s/0.3s
+        self._recognizer.pause_threshold = 0.5
+        self._recognizer.non_speaking_duration = 0.3
         logger.info(f"[VoiceListener] energy_threshold={config.audio_energy_threshold} "
                     f"dynamic={config.dynamic_energy_threshold} "
                     f"device_index={config.mic_device_index}")

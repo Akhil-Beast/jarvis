@@ -1,10 +1,82 @@
 [
   {
     "role": "user",
-    "content": "open chrome"
+    "content": "Raste Mein bol rahe the bahut kharcha karte"
+  },
+  {
+    "role": "user",
+    "content": "pitaai na lagaen"
+  },
+  {
+    "role": "user",
+    "content": "new Aditi bol rahe the"
   },
   {
     "role": "assistant",
-    "content": "Opening Chrome."
+    "content": "Direct text injection"
+  },
+  {
+    "role": "user",
+    "content": "how to open chrome"
+  },
+  {
+    "role": "assistant",
+    "content": "open chrome"
+  },
+  {
+    "role": "user",
+    "content": "tell me how to take a screenshot"
+  },
+  {
+    "role": "assistant",
+    "content": "screenshot"
+  },
+  {
+    "role": "user",
+    "content": "create a folder named my_project"
+  },
+  {
+    "role": "assistant",
+    "content": "create folder my_project"
+  },
+  {
+    "role": "user",
+    "content": "how to execute task open solidworks"
+  },
+  {
+    "role": "assistant",
+    "content": "solidworks"
+  },
+  {
+    "role": "user",
+    "content": "type hello world this is a test"
+  },
+  {
+    "role": "assistant",
+    "content": "handy direct typing"
+  },
+  {
+    "role": "user",
+    "content": "can you please increase the volume"
+  },
+  {
+    "role": "assistant",
+    "content": "volume up"
+  },
+  {
+    "role": "user",
+    "content": "what time is it"
+  },
+  {
+    "role": "assistant",
+    "content": "time"
+  },
+  {
+    "role": "user",
+    "content": "turn on spotify and play lo-fi music"
+  },
+  {
+    "role": "assistant",
+    "content": "Executed: Autonomous Gemini Action Plan"
   }
 ]

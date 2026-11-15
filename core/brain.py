@@ -468,16 +468,19 @@ User Command: {cmd}"""
                     return client.models.generate_content(
                         model=config.gemini_model,
                         contents=system_prompt,
-                        config=types.GenerateContentConfig(temperature=0.0)
+                        config=types.GenerateContentConfig(
+                            temperature=0.0,
+                            max_output_tokens=512
+                        )
                     )
 
-                # 15-second hard timeout — prevents indefinite hang
+                # 8-second hard timeout — fast fallback if network lags
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                     future = executor.submit(_call_gemini)
                     try:
-                        response = future.result(timeout=15)
+                        response = future.result(timeout=8)
                     except concurrent.futures.TimeoutError:
-                        logger.warning("[Brain] Gemini call timed out after 15s — using local fallback.")
+                        logger.warning("[Brain] Gemini call timed out after 8s — using local fallback.")
                         return None
 
                 text = response.text.strip()

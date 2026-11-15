@@ -1,9 +1,12 @@
 import os
 import subprocess
+import time
 import winreg
 from pathlib import Path
 import psutil
 from core.safety import logger
+from automation.window_manager import window_manager
+
 
 class AppLauncher:
     """Discovers, launches, and switches to Windows desktop and Store applications."""
@@ -58,7 +61,6 @@ class AppLauncher:
                             with winreg.OpenKey(key, app_name) as app_key:
                                 exe_path, _ = winreg.QueryValueEx(app_key, "")
                                 self._installed_cache[app_name.lower()] = exe_path
-                                # also map without .exe
                                 if app_name.lower().endswith(".exe"):
                                     self._installed_cache[app_name[:-4].lower()] = exe_path
                         except Exception:
@@ -69,49 +71,64 @@ class AppLauncher:
     def launch(self, name_or_path: str) -> tuple[bool, str]:
         """Launches an application or brings it to focus if already running."""
         name_clean = name_or_path.strip().lower()
-        logger.info(f"[AppLauncher] Attempting to launch '{name_clean}'")
+        logger.info(f"[AppLauncher] Launching/focusing '{name_clean}'")
 
-        # 1. Check known aliases
+        # 1. First, check if a window for this application is already open and visible.
+        #    If so, bring it to the foreground immediately (sub-100ms response).
         target_exes = self.KNOWN_APPS.get(name_clean, [name_clean])
-        if not any(e.endswith(".exe") for e in target_exes):
-            target_exes.append(f"{name_clean}.exe")
+        keywords_to_check = [name_clean] + [e.replace(".exe", "") for e in target_exes]
 
-        # 2. Check if already running in memory
-        for proc in psutil.process_iter(['pid', 'name']):
-            try:
-                pname = proc.info['name'].lower()
-                for target in target_exes:
-                    if target.lower() in pname or pname in target.lower():
-                        logger.info(f"[AppLauncher] '{pname}' is already running (PID {proc.info['pid']}).")
-                        return True, f"{pname} is already active."
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
+        for kw in keywords_to_check:
+            if window_manager.focus_window(kw):
+                logger.info(f"[AppLauncher] Focused existing window matching '{kw}'.")
+                return True, f"Focused {name_clean} window."
 
-        # 3. Check App Paths registry cache
-        for target in target_exes:
+        # 2. Window is not open — launch the application.
+        # Check known target executables
+        candidates = list(target_exes)
+        if not any(e.endswith(".exe") for e in candidates):
+            candidates.append(f"{name_clean}.exe")
+
+        # 3. Check Windows App Paths Registry Cache
+        for target in candidates:
             target_key = target.lower()
             if target_key in self._installed_cache:
                 exe = self._installed_cache[target_key]
                 try:
                     subprocess.Popen(f'"{exe}"', shell=True)
-                    return True, f"Started {target} from {exe}"
+                    logger.info(f"[AppLauncher] Launched {name_clean} from registry: {exe}")
+                    return True, f"Started {name_clean} from {exe}"
                 except Exception as e:
                     logger.warning(f"Failed to start cached path {exe}: {e}")
 
-        # 4. Try Direct Shell Start (works for Windows system commands, URLs, and PATH exes)
-        try:
-            os.startfile(name_or_path)
-            return True, f"Started {name_or_path}"
-        except Exception:
-            pass
+        # 4. Try Direct os.startfile (handles system utilities, shell associations, URLs)
+        for target in [name_clean] + candidates:
+            try:
+                os.startfile(target)
+                logger.info(f"[AppLauncher] Launched via os.startfile: {target}")
+                return True, f"Started {target}"
+            except Exception:
+                pass
 
-        # 5. Try start command via PowerShell
+        # 5. Try Windows command prompt start
+        for target in candidates:
+            try:
+                proc = subprocess.Popen(f'cmd /c start "" "{target}"', shell=True)
+                proc.wait(timeout=2)
+                logger.info(f"[AppLauncher] Launched via cmd start: {target}")
+                return True, f"Started {target}"
+            except Exception:
+                pass
+
+        # 6. Try PowerShell Start-Process as final launch fallback
         try:
             proc = subprocess.Popen(["powershell", "-Command", f"Start-Process '{name_clean}'"], shell=False)
             proc.wait(timeout=3)
+            logger.info(f"[AppLauncher] Launched via PowerShell Start-Process: {name_clean}")
             return True, f"Launched {name_clean} via PowerShell"
         except Exception as e:
             logger.error(f"[AppLauncher] Could not launch '{name_clean}': {e}")
             return False, f"Could not find or launch application '{name_or_path}'."
+
 
 app_launcher = AppLauncher()
