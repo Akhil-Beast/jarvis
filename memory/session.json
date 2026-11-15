@@ -1,0 +1,10 @@
+[
+  {
+    "role": "user",
+    "content": "open chrome"
+  },
+  {
+    "role": "assistant",
+    "content": "Opening Chrome."
+  }
+]

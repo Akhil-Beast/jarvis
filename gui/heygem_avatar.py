@@ -32,6 +32,7 @@ class HeyGemAvatarWidget(QWidget):
         self.timer.start(16)  # ~60 fps
 
     def set_state(self, state: str):
+        # Accept "THINKING" in addition to existing states
         self.state = state
         self.update()
 

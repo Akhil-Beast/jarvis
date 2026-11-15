@@ -113,16 +113,71 @@ class TaskOrchestrator:
                 return True
 
             elif action == "shell":
-                # Execute a safe shell command (pre-approved actions only)
+                # Execute a safe shell command with expanded allowlist
                 cmd = step.get("command", "")
-                allowed_prefixes = ("notepad", "explorer", "calc", "mspaint", "cmd /c echo", "powershell -Command New-Item")
-                if any(cmd.lower().startswith(p) for p in allowed_prefixes):
+                cmd_lower = cmd.lower().strip()
+
+                # --- BLOCKLIST: always deny dangerous destructive commands ---
+                BLOCKED = (
+                    "rm -rf", "del /f /s /q", "format ", "rd /s /q",
+                    "reg delete", "reg add", "bcdedit", "diskpart",
+                    "shutdown /f", "taskkill /f /im", "net user ",
+                    "net localgroup", "icacls", "attrib -s -h",
+                )
+                if any(b in cmd_lower for b in BLOCKED):
+                    logger.warning(f"[Orchestrator] BLOCKED dangerous shell command: {cmd}")
+                    tts.speak("That command is not permitted for safety reasons, sir.")
+                    return False
+
+                # --- ALLOWLIST: safe read/create/open operations ---
+                ALLOWED_PREFIXES = (
+                    # App launches
+                    "notepad", "explorer", "calc", "mspaint", "wordpad",
+                    "cmd /c echo", "cmd /c start",
+                    # PowerShell safe operations
+                    "powershell -command new-item",
+                    "powershell -command get-childitem",
+                    "powershell -command copy-item",
+                    "powershell -command move-item",
+                    "powershell -command rename-item",
+                    "powershell -command set-content",
+                    "powershell -command add-content",
+                    "powershell -command get-content",
+                    "powershell -command test-path",
+                    "powershell -command invoke-item",
+                    "powershell -command start-process",
+                    "powershell -command [system.media.soundplayer]",
+                    "powershell -c (new-object",
+                    "powershell -c start",
+                    # wscript / cscript
+                    "wscript", "cscript",
+                    # Specific system utilities
+                    "tasklist", "ipconfig", "ping ",
+                    "netstat", "systeminfo",
+                )
+                if any(cmd_lower.startswith(p) for p in ALLOWED_PREFIXES):
                     import subprocess
                     subprocess.Popen(cmd, shell=True)
                     return True
-                else:
-                    logger.warning(f"[Orchestrator] Shell command blocked (not in allowlist): {cmd}")
-                    return False
+
+                # --- DESTRUCTIVE OPERATIONS requiring user confirmation ---
+                DESTRUCTIVE = (
+                    "powershell -command remove-item",
+                    "del ", "rmdir",
+                )
+                if any(cmd_lower.startswith(d) for d in DESTRUCTIVE):
+                    from core.safety import safety
+                    if safety.request_confirmation(f"Shell: {cmd}"):
+                        import subprocess
+                        subprocess.Popen(cmd, shell=True)
+                        return True
+                    else:
+                        tts.speak("Command cancelled, sir.")
+                        return False
+
+                logger.warning(f"[Orchestrator] Shell command blocked (not in allowlist): {cmd}")
+                tts.speak("That command is not in the approved list, sir.")
+                return False
 
             elif action == "speak":
                 text = step.get("text", "")

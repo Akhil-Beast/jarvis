@@ -54,6 +54,9 @@ class ArcReactorHUD(QWidget):
         elif self.state == "LISTENING":
             primary_color = QColor(0, 255, 220)      # Neon Cyan
             glow_color = QColor(0, 255, 220, 120)
+        elif self.state == "THINKING":
+            primary_color = QColor(251, 191, 36)     # Amber / thinking
+            glow_color = QColor(251, 191, 36, 100)
         else: # STANDBY
             primary_color = QColor(0, 180, 230)      # Electric Cyan
             glow_color = QColor(0, 180, 230, 60)

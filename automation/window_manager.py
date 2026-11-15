@@ -98,4 +98,10 @@ class WindowManager:
         if hwnd:
             win32gui.ShowWindow(hwnd, win32con.SW_MAXIMIZE)
 
+    @staticmethod
+    def get_active_window_title() -> str:
+        """Returns the title of the currently active (foreground) window."""
+        hwnd = win32gui.GetForegroundWindow()
+        return win32gui.GetWindowText(hwnd) if hwnd else ""
+
 window_manager = WindowManager()

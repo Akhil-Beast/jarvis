@@ -7,7 +7,7 @@ Guarantees:
 - Strips conversational wrappers ("how to", "tell me how to", "can you", "please").
 - Instant local rules for common desktop actions (zero latency).
 - Direct Handy-style text injection for dictation into active apps.
-- Autonomous Gemini execution planner for complex multi-step instructions.
+- Autonomous Gemini execution planner with conversation memory for complex instructions.
 """
 import json
 import os
@@ -20,6 +20,11 @@ from core.safety import logger
 from automation.window_manager import window_manager
 from automation.uia_controller import uia_controller
 from automation.handy_injector import handy_injector
+
+# Lazy import to avoid circular dependency — memory is a sibling module
+def _get_memory():
+    from core.memory import memory
+    return memory
 
 
 class ActionPlan:
@@ -40,24 +45,39 @@ class AIBrain:
         cmd = self._normalize_intent(raw_cmd)
         logger.info(f"[Brain] Normalized command: '{raw_cmd}' -> '{cmd}'")
 
+        # Record user utterance in memory
+        mem = _get_memory()
+        mem.add("user", raw_cmd)
+
         # 1. Fast local execution rules (instant, zero network latency)
         local_plan = self._try_local_rules(cmd)
         if local_plan:
             logger.info(f"[Brain] Matched local action rule ({local_plan.explanation})")
+            # Record JARVIS response
+            mem.add("assistant", local_plan.explanation)
             return local_plan
 
-        # 2. Autonomous LLM planner (Gemini)
+        # 1.5 Skill registry — modular skills before hitting Gemini
+        skill_plan = self._try_skill_registry(cmd)
+        if skill_plan:
+            mem.add("assistant", f"Skill: {skill_plan.explanation}")
+            return skill_plan
+
+        # 2. Autonomous LLM planner (Gemini) with conversation memory
         llm_plan = self._try_llm_planning(cmd)
         if llm_plan and not self._is_passive_tutorial(llm_plan, cmd):
+            mem.add("assistant", f"Executed: {llm_plan.explanation}")
             return llm_plan
 
         # 3. Smart execution fallback — open/run target directly
         shell_plan = self._smart_shell_fallback(cmd)
         if shell_plan:
+            mem.add("assistant", shell_plan.explanation)
             return shell_plan
 
         # 4. Handy Dictation Fallback: If user is dictating sentences, inject directly into active window
         if len(cmd.split()) >= 3 and not any(w in cmd.lower() for w in ["open", "close", "delete", "shutdown"]):
+            mem.add("assistant", "Direct text injection")
             return ActionPlan(
                 steps=[
                     {"action": "type_text", "text": raw_cmd, "enter": False},
@@ -67,6 +87,7 @@ class AIBrain:
             )
 
         # 5. Last resort — launch Google search for query
+        mem.add("assistant", f"Web search: {cmd}")
         return ActionPlan(
             steps=[
                 {"action": "open_app", "target": "chrome"},
@@ -77,6 +98,21 @@ class AIBrain:
             ],
             explanation="Web search execution"
         )
+
+    # ------------------------------------------------------------------ #
+    # Skill Registry Dispatch                                             #
+    # ------------------------------------------------------------------ #
+    def _try_skill_registry(self, cmd: str) -> ActionPlan | None:
+        try:
+            from skills import skill_registry
+            skill = skill_registry.find_skill(cmd)
+            if skill:
+                logger.info(f"[Brain] Dispatching to skill: {skill.name}")
+                steps = skill.execute(cmd)
+                return ActionPlan(steps=steps, explanation=f"Skill:{skill.name}")
+        except Exception as e:
+            logger.warning(f"[Brain] Skill registry error: {e}")
+        return None
 
     # ------------------------------------------------------------------ #
     # Intent Normalizer: Strips passive tutorial wrappers                #
@@ -377,7 +413,7 @@ class AIBrain:
         return None
 
     # ------------------------------------------------------------------ #
-    # Autonomous LLM Planning (Gemini)                                   #
+    # Autonomous LLM Planning (Gemini) with Memory                       #
     # ------------------------------------------------------------------ #
     def _try_llm_planning(self, cmd: str) -> ActionPlan | None:
         if not config.gemini_api_key and not config.openai_api_key:
@@ -388,6 +424,11 @@ class AIBrain:
         except Exception:
             windows = []
 
+        # Pull recent conversation context
+        mem = _get_memory()
+        context_str = mem.get_context_string(max_turns=6)
+        context_section = f"\nRecent conversation:\n{context_str}\n" if context_str else ""
+
         system_prompt = f"""You are the autonomous AI execution brain of JARVIS, a Windows desktop assistant.
 Convert the user command into a JSON array of executable desktop actions.
 
@@ -396,7 +437,7 @@ CRITICAL MANDATES:
 2. YOU MUST EXECUTE THE TASK ON WINDOWS.
 3. Every plan must perform the concrete steps (open_app, click_element, type_text, hotkey, press_key, scroll, system, shell) followed by a brief confirmation speak action.
 4. Output ONLY a valid JSON array. Zero markdown, zero formatting, zero conversational prose.
-
+{context_section}
 Active Windows: {windows}
 
 Available Actions:
@@ -419,14 +460,26 @@ User Command: {cmd}"""
             if config.gemini_api_key:
                 from google import genai
                 from google.genai import types
+                import concurrent.futures
+
                 client = genai.Client(api_key=config.gemini_api_key)
-                response = client.models.generate_content(
-                    model=config.gemini_model,
-                    contents=system_prompt,
-                    config=types.GenerateContentConfig(
-                        temperature=0.0
+
+                def _call_gemini():
+                    return client.models.generate_content(
+                        model=config.gemini_model,
+                        contents=system_prompt,
+                        config=types.GenerateContentConfig(temperature=0.0)
                     )
-                )
+
+                # 15-second hard timeout — prevents indefinite hang
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(_call_gemini)
+                    try:
+                        response = future.result(timeout=15)
+                    except concurrent.futures.TimeoutError:
+                        logger.warning("[Brain] Gemini call timed out after 15s — using local fallback.")
+                        return None
+
                 text = response.text.strip()
                 text = re.sub(r"^```(?:json)?\s*", "", text)
                 text = re.sub(r"\s*```$", "", text)

@@ -1,6 +1,6 @@
 import sys
 from pathlib import Path
-from PySide6.QtCore import Qt, Signal, QObject
+from PySide6.QtCore import Qt, Signal, QObject, QThread
 from PySide6.QtGui import QIcon, QFont
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
 from config.settings import config
 from core.safety import safety, logger
 from core.tts_engine import tts
-from core.brain import brain
+from core.brain import brain, ActionPlan
 from automation.orchestrator import orchestrator
 from gui.hud_visualizer import ArcReactorHUD
 from gui.heygem_avatar import HeyGemAvatarWidget
@@ -20,6 +20,25 @@ from gui.settings_dialog import SettingsDialog
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+class BrainWorker(QThread):
+    """Off-thread brain planner — prevents GUI freeze during Gemini API calls."""
+    plan_ready = Signal(object)   # emits ActionPlan
+    error = Signal(str)
+
+    def __init__(self, command: str, parent=None):
+        super().__init__(parent)
+        self._command = command
+
+    def run(self):
+        try:
+            plan = brain.plan_command(self._command)
+            self.plan_ready.emit(plan)
+        except Exception as e:
+            logger.error(f"[BrainWorker] Planning error: {e}")
+            self.error.emit(str(e))
+
+
 class GuiSignals(QObject):
     """Thread-safe Qt signal dispatcher."""
     audio_level = Signal(float)
@@ -27,6 +46,8 @@ class GuiSignals(QObject):
     state_changed = Signal(bool)
     step_updated = Signal(int, dict, str)
     tts_state = Signal(bool)
+    plan_ready = Signal(object)
+    planning_started = Signal(str)
 
 class MainWindow(QMainWindow):
     """Modern Desktop HUD Interface for JARVIS Voice Control Assistant."""
@@ -319,12 +340,29 @@ class MainWindow(QMainWindow):
 
     def _on_transcript_received(self, text: str):
         self.lbl_transcript.setText(f"You said: \"{text}\"")
-        self.lbl_status.setText(f"⚙ Planning: '{text}'...")
+        self.lbl_status.setText(f"🧠 Planning: '{text}'…")
+        self.hud.set_state("THINKING")
+        self.avatar.set_state("THINKING")
 
-        # 1. Ask Brain to plan command
-        plan = brain.plan_command(text)
+        # Spawn off-thread worker — prevents GUI freeze during Gemini API calls
+        self._brain_worker = BrainWorker(text)
+        self._brain_worker.plan_ready.connect(self._on_plan_ready)
+        self._brain_worker.error.connect(self._on_plan_error)
+        self._brain_worker.start()
 
-        # 2. Populate execution table
+    def _on_plan_ready(self, plan: ActionPlan):
+        """Receives the ActionPlan on the main thread after BrainWorker finishes."""
+        # Restore UI state
+        if self.voice_listener.is_active:
+            self.hud.set_state("LISTENING")
+            self.avatar.set_state("LISTENING")
+            self.lbl_status.setText("● ONLINE & LISTENING (Speak voice commands)")
+            self.lbl_status.setStyleSheet("font-size: 12px; color: #38bdf8; font-weight: bold;")
+        else:
+            self.hud.set_state("STANDBY")
+            self.avatar.set_state("STANDBY")
+
+        # Populate execution table
         self.table.setRowCount(len(plan.steps))
         for row, step in enumerate(plan.steps):
             self.table.setItem(row, 0, QTableWidgetItem(f"#{row + 1}"))
@@ -332,8 +370,15 @@ class MainWindow(QMainWindow):
             self.table.setItem(row, 1, QTableWidgetItem(action_desc))
             self.table.setItem(row, 2, QTableWidgetItem("⏳ PENDING"))
 
-        # 3. Execute plan
+        # Execute plan in background orchestrator thread
         orchestrator.execute_plan_async(plan)
+
+    def _on_plan_error(self, error_msg: str):
+        """Handles brain planning errors gracefully."""
+        self.lbl_status.setText(f"⚠ Planning error — retrying with fallback")
+        self.lbl_status.setStyleSheet("font-size: 12px; color: #f59e0b;")
+        logger.error(f"[MainWindow] BrainWorker error: {error_msg}")
+        tts.speak("I encountered an error planning that command, sir.")
 
     def _on_step_updated(self, index: int, step: dict, status: str):
         if 0 <= index < self.table.rowCount():
