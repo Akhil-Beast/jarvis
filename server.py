@@ -76,6 +76,16 @@ app = FastAPI(
 )
 
 
+@app.middleware("http")
+async def uptime_monitor_middleware(request: Request, call_next):
+    """Guarantees all uptime monitors sending HEAD, OPTIONS, or health checks receive 200 OK."""
+    if request.method == "HEAD":
+        return Response(status_code=200)
+    if request.method == "OPTIONS":
+        return Response(status_code=200, headers={"Allow": "GET, HEAD, POST, OPTIONS"})
+    return await call_next(request)
+
+
 # ---------------------------------------------------------------------- #
 # Request & Response Models                                             #
 # ---------------------------------------------------------------------- #
@@ -84,14 +94,18 @@ class ChatRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------- #
-# Health & Status Endpoints                                             #
+# Health & Status Endpoints (Accepts GET, HEAD, POST, OPTIONS)          #
 # ---------------------------------------------------------------------- #
-@app.get("/health")
-@app.get("/api/ping")
-async def health():
+@app.api_route("/health", methods=["GET", "HEAD", "POST", "OPTIONS"])
+@app.api_route("/api/ping", methods=["GET", "HEAD", "POST", "OPTIONS"])
+async def health(request: Request):
     """Uptime healthcheck endpoint used by Render and external monitors."""
+    if request.method == "HEAD":
+        return Response(status_code=200)
+    if request.method == "OPTIONS":
+        return Response(status_code=200, headers={"Allow": "GET, HEAD, POST, OPTIONS"})
     uptime_sec = int(time.time() - START_TIME)
-    return {
+    return JSONResponse({
         "status": "online",
         "service": "JARVIS Cloud Node",
         "assistant": config.assistant_name,
@@ -100,15 +114,17 @@ async def health():
         "uptime_formatted": f"{uptime_sec // 3600}h {(uptime_sec % 3600) // 60}m {uptime_sec % 60}s",
         "model": config.gemini_model,
         "mode": "24/7 Continuous"
-    }
+    })
 
 
-@app.get("/api/status")
-async def status():
+@app.api_route("/api/status", methods=["GET", "HEAD", "POST", "OPTIONS"])
+async def status(request: Request):
     """Detailed system performance and host diagnostics."""
+    if request.method == "HEAD":
+        return Response(status_code=200)
     import psutil
     mem = psutil.virtual_memory()
-    return {
+    return JSONResponse({
         "assistant": config.assistant_name,
         "user": config.user_name,
         "platform": sys.platform,
@@ -119,7 +135,7 @@ async def status():
         "ai_model": config.gemini_model,
         "tts_voice": config.edge_tts_voice,
         "render_external_url": os.getenv("RENDER_EXTERNAL_URL", "not_set")
-    }
+    })
 
 
 # ---------------------------------------------------------------------- #
@@ -187,9 +203,21 @@ async def chat(req: ChatRequest):
 # ---------------------------------------------------------------------- #
 # Interactive JARVIS Web HUD Interface (HTML5/Canvas/Web Speech)        #
 # ---------------------------------------------------------------------- #
-@app.get("/", response_class=HTMLResponse)
-async def web_hud():
-    """Serves the complete futuristic JARVIS Web HUD."""
+@app.api_route("/", methods=["GET", "HEAD", "POST", "OPTIONS"], response_class=HTMLResponse)
+async def web_hud(request: Request):
+    """Serves the complete futuristic JARVIS Web HUD and responds to all monitor probes."""
+    if request.method == "HEAD":
+        return Response(status_code=200, media_type="text/html")
+    if request.method == "OPTIONS":
+        return Response(status_code=200, headers={"Allow": "GET, HEAD, POST, OPTIONS"})
+    if request.method == "POST":
+        try:
+            body = await request.json()
+            if isinstance(body, dict) and "message" in body:
+                return await chat(ChatRequest(message=body["message"]))
+        except Exception:
+            pass
+        return Response(status_code=200, content="OK")
     html_content = """<!DOCTYPE html>
 <html lang="en">
 <head>
