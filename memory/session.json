@@ -1,14 +1,6 @@
 [
   {
     "role": "user",
-    "content": "close all the active"
-  },
-  {
-    "role": "assistant",
-    "content": "Clearing the active workspace for you right away, Sir. Minimizing our current applications to give you a pristine desktop."
-  },
-  {
-    "role": "user",
     "content": "Baba condition"
   },
   {
@@ -78,5 +70,13 @@
   {
     "role": "assistant",
     "content": "That would be Paris, Sir. Though given your recent wandering habits across our workspace, I felt it wise to double-check."
+  },
+  {
+    "role": "user",
+    "content": "What is the capital of France?"
+  },
+  {
+    "role": "assistant",
+    "content": "Still Paris, Sir, unless the French have quietly relocated it overnight while we weren't looking."
   }
 ]

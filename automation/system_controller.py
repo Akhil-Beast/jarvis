@@ -3,8 +3,14 @@ import time
 import subprocess
 from datetime import datetime
 from pathlib import Path
-import pyautogui
 from core.safety import logger
+
+try:
+    import pyautogui
+    HAS_PYAUTOGUI = True
+except Exception:
+    pyautogui = None
+    HAS_PYAUTOGUI = False
 
 class SystemController:
     """Controls OS-level Windows functions: volume, media, screenshots, file navigation."""
@@ -12,6 +18,8 @@ class SystemController:
     @staticmethod
     def adjust_volume(direction: str = "up", steps: int = 5):
         """direction: 'up', 'down', or 'mute'"""
+        if not HAS_PYAUTOGUI or pyautogui is None:
+            return
         key = "volumeup" if direction == "up" else ("volumedown" if direction == "down" else "volumemute")
         count = 1 if direction == "mute" else steps
         logger.info(f"[System] Volume {direction} ({count} steps)")
@@ -29,10 +37,15 @@ class SystemController:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filepath = save_dir / f"screenshot_{timestamp}.png"
         
-        screenshot = pyautogui.screenshot()
-        screenshot.save(filepath)
-        logger.info(f"[System] Screenshot saved: {filepath}")
-        return str(filepath)
+        if HAS_PYAUTOGUI and pyautogui is not None:
+            try:
+                screenshot = pyautogui.screenshot()
+                screenshot.save(filepath)
+                logger.info(f"[System] Screenshot saved: {filepath}")
+                return str(filepath)
+            except Exception as e:
+                logger.warning(f"[System] Screenshot capture notice: {e}")
+        return ""
 
     @staticmethod
     def open_folder(folder_path: str = ""):
@@ -43,14 +56,21 @@ class SystemController:
         elif path.lower() in ["downloads", "desktop", "documents", "pictures", "videos"]:
             path = str(Path.home() / path.capitalize())
 
-        logger.info(f"[System] Opening folder in Explorer: {path}")
-        subprocess.Popen(f'explorer.exe "{path}"', shell=True)
+        try:
+            if os.name == "nt":
+                os.startfile(path)
+            else:
+                subprocess.Popen(["xdg-open", path])
+            logger.info(f"[System] Opened folder: {path}")
+        except Exception as e:
+            logger.error(f"[System] Failed to open folder '{path}': {e}")
 
     @staticmethod
     def search_in_explorer(query: str):
-        """Opens File Explorer and focuses the search box with query."""
-        subprocess.Popen("explorer.exe", shell=True)
-        time.sleep(0.8)
+        """Focuses explorer and triggers search bar navigation."""
+        if not HAS_PYAUTOGUI or pyautogui is None:
+            return
+        logger.info(f"[System] Initiating Windows Explorer search: '{query}'")
         pyautogui.hotkey("ctrl", "e")
         time.sleep(0.1)
         pyautogui.write(query, interval=0.02)
@@ -58,7 +78,12 @@ class SystemController:
 
     @staticmethod
     def lock_workstation():
-        logger.info("[System] Locking Windows workstation.")
-        subprocess.run(["rundll32.exe", "user32.dll,LockWorkStation"], check=False)
+        """Locks the Windows computer workstation immediately."""
+        try:
+            import ctypes
+            ctypes.windll.user32.LockWorkStation()
+            logger.info("[System] Workstation locked.")
+        except Exception as e:
+            logger.error(f"[System] Failed to lock workstation: {e}")
 
 system_controller = SystemController()

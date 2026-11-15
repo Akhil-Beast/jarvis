@@ -5,7 +5,13 @@ import tempfile
 import threading
 import time
 import requests
-import pygame
+
+try:
+    import pygame
+    HAS_PYGAME = True
+except Exception:
+    pygame = None
+    HAS_PYGAME = False
 
 from config.settings import config
 from core.safety import logger, safety
@@ -26,13 +32,15 @@ class TTSEngine:
         self._is_speaking = False
         self._callbacks = []
 
-        # Initialize pygame.mixer for zero-latency audio playback
-        try:
-            pygame.mixer.init()
-            self._mixer_ready = True
-        except Exception as e:
-            logger.warning(f"[TTS] pygame.mixer init warning: {e}")
-            self._mixer_ready = False
+        # Initialize pygame.mixer for zero-latency audio playback (desktop only)
+        self._mixer_ready = False
+        if HAS_PYGAME and pygame is not None:
+            try:
+                pygame.mixer.init()
+                self._mixer_ready = True
+            except Exception as e:
+                logger.warning(f"[TTS] pygame.mixer init warning: {e}")
+                self._mixer_ready = False
 
         # Persistent SAPI5 engine as offline fallback
         self._sapi5_engine = None
@@ -66,7 +74,7 @@ class TTSEngine:
     @property
     def is_speaking(self) -> bool:
         """Returns True if audio is actively playing through the speakers."""
-        if self._mixer_ready:
+        if self._mixer_ready and pygame is not None:
             try:
                 if pygame.mixer.music.get_busy():
                     return True
@@ -100,7 +108,7 @@ class TTSEngine:
                 self._speech_queue.get_nowait()
             except queue.Empty:
                 break
-        if self._mixer_ready:
+        if self._mixer_ready and pygame is not None:
             try:
                 pygame.mixer.music.stop()
             except Exception:
@@ -165,7 +173,7 @@ class TTSEngine:
         try:
             asyncio.run(_synthesize())
 
-            if self._mixer_ready:
+            if self._mixer_ready and pygame is not None:
                 pygame.mixer.music.load(tmp_path)
                 pygame.mixer.music.play()
                 while pygame.mixer.music.get_busy():
@@ -179,7 +187,7 @@ class TTSEngine:
             logger.warning(f"[TTS] Edge-TTS failed: {e}. Retrying via SAPI5.")
             self._speak_sapi5(text)
         finally:
-            if self._mixer_ready:
+            if self._mixer_ready and pygame is not None:
                 try:
                     pygame.mixer.music.unload()
                 except Exception:

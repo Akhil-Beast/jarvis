@@ -8,10 +8,16 @@ Provides:
 - Keystroke synthesis for hotkeys and commands
 """
 import time
-import pyperclip
 from core.safety import logger
 from automation.input_controller import input_controller
 from automation.window_manager import window_manager
+
+try:
+    import pyperclip
+    HAS_PYPERCLIP = True
+except Exception:
+    pyperclip = None
+    HAS_PYPERCLIP = False
 
 
 class HandyInjector:
