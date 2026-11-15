@@ -1,47 +1,7 @@
 [
   {
     "role": "user",
-    "content": "find all apks"
-  },
-  {
-    "role": "assistant",
-    "content": "find all apks"
-  },
-  {
-    "role": "user",
-    "content": "double click BankAnalyzer"
-  },
-  {
-    "role": "assistant",
-    "content": "double click bankanalyzer"
-  },
-  {
-    "role": "user",
-    "content": "click on Chrome"
-  },
-  {
-    "role": "assistant",
-    "content": "click chrome"
-  },
-  {
-    "role": "user",
-    "content": "install the apk"
-  },
-  {
-    "role": "assistant",
-    "content": "install apk"
-  },
-  {
-    "role": "user",
-    "content": "inspect the apk"
-  },
-  {
-    "role": "assistant",
-    "content": "inspect apk"
-  },
-  {
-    "role": "user",
-    "content": "Jarvis, how are you feeling today?"
+    "content": "han hello"
   },
   {
     "role": "assistant",
@@ -49,34 +9,74 @@
   },
   {
     "role": "user",
-    "content": "What do you think about artificial intelligence?"
+    "content": "han"
   },
   {
     "role": "assistant",
-    "content": "Conversational: I suppose I feel a certain fondness for the s..."
+    "content": "Executed: Autonomous Gemini Action Plan"
   },
   {
     "role": "user",
-    "content": "Tell me a witty joke, Jarvis."
+    "content": "145 of"
   },
   {
     "role": "assistant",
-    "content": "Conversational: Right away, Sir. I would tell you a joke abou..."
+    "content": "Executed: Autonomous Gemini Action Plan"
   },
   {
     "role": "user",
-    "content": "Can you explain quantum computing in simple terms?"
+    "content": "144"
   },
   {
     "role": "assistant",
-    "content": "Conversational: Quantum computing, Sir, is rather like a book..."
+    "content": "Executed: Autonomous Gemini Action Plan"
   },
   {
     "role": "user",
-    "content": "Open Chrome"
+    "content": "aur Kuchh Nahin"
   },
   {
     "role": "assistant",
-    "content": "open chrome"
+    "content": "Executed: Autonomous Gemini Action Plan"
+  },
+  {
+    "role": "user",
+    "content": "hello hello"
+  },
+  {
+    "role": "assistant",
+    "content": "greeting"
+  },
+  {
+    "role": "user",
+    "content": "can you"
+  },
+  {
+    "role": "assistant",
+    "content": "Conversational: At your service, Sir. Pray continue, though I..."
+  },
+  {
+    "role": "user",
+    "content": "able to work online"
+  },
+  {
+    "role": "assistant",
+    "content": "Executed: Autonomous Gemini Action Plan"
+  },
+  {
+    "role": "user",
+    "content": "what do you spell in my screen"
+  },
+  {
+    "role": "assistant",
+    "content": "Conversational: My apologies for the previous confusion, Sir,..."
+  },
+  {
+    "role": "user",
+    "content": "just describe"
+  },
+  {
+    "role": "assistant",
+    "content": "Conversational: I am at your complete disposal, Sir, though m..."
   }
 ]

@@ -15,38 +15,49 @@ class TaskOrchestrator:
     def __init__(self, on_step_update=None):
         self.on_step_update = on_step_update
         self._current_task_thread = None
+        self._is_running = False
+        self._lock = threading.Lock()
+
+    @property
+    def is_running(self) -> bool:
+        return self._is_running
 
     def execute_plan_async(self, plan: ActionPlan):
         """Runs the action plan in a background thread so the UI remains fluid."""
         safety.reset_abort()
-        self._current_task_thread = threading.Thread(
-            target=self._execute_worker, args=(plan,), daemon=True
-        )
-        self._current_task_thread.start()
+        with self._lock:
+            self._is_running = True
+            self._current_task_thread = threading.Thread(
+                target=self._execute_worker, args=(plan,), daemon=True
+            )
+            self._current_task_thread.start()
 
     def _execute_worker(self, plan: ActionPlan):
-        logger.info(f"[Orchestrator] Executing plan with {len(plan.steps)} steps.")
+        try:
+            logger.info(f"[Orchestrator] Executing plan with {len(plan.steps)} steps.")
 
-        for i, step in enumerate(plan.steps):
-            if safety.is_aborted:
-                logger.warning("[Orchestrator] Execution aborted by user emergency stop.")
+            for i, step in enumerate(plan.steps):
+                if safety.is_aborted:
+                    logger.warning("[Orchestrator] Execution aborted by user emergency stop.")
+                    if self.on_step_update:
+                        self.on_step_update(i, step, "ABORTED")
+                    tts.speak("Automation stopped.", interrupt=True)
+                    break
+
+                action_type = step.get("action", "")
                 if self.on_step_update:
-                    self.on_step_update(i, step, "ABORTED")
-                tts.speak("Automation stopped.", interrupt=True)
-                break
+                    self.on_step_update(i, step, "RUNNING")
 
-            action_type = step.get("action", "")
-            if self.on_step_update:
-                self.on_step_update(i, step, "RUNNING")
+                success = self._run_single_step(step)
 
-            success = self._run_single_step(step)
+                status = "SUCCESS" if success else "FAILED"
+                if self.on_step_update:
+                    self.on_step_update(i, step, status)
 
-            status = "SUCCESS" if success else "FAILED"
-            if self.on_step_update:
-                self.on_step_update(i, step, status)
-
-            # Brief pause between sequential automated actions
-            time.sleep(0.15)
+                # Brief pause between sequential automated actions
+                time.sleep(0.15)
+        finally:
+            self._is_running = False
 
     def _run_single_step(self, step: dict) -> bool:
         action = step.get("action")

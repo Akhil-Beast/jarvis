@@ -123,6 +123,14 @@ class VoiceListener:
                             time.sleep(0.1)
                             continue
 
+                        # Avoid acoustic echo feedback: if JARVIS is currently speaking, don't transcribe
+                        from core.tts_engine import tts
+                        if tts.is_speaking:
+                            time.sleep(0.1)
+                            if self.on_level:
+                                self.on_level(0.0)
+                            continue
+
                         try:
                             audio = self._recognizer.listen(
                                 source,

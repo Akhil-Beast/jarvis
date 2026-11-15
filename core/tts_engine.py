@@ -63,6 +63,17 @@ class TTSEngine:
     # ------------------------------------------------------------------ #
     # Public API                                                           #
     # ------------------------------------------------------------------ #
+    @property
+    def is_speaking(self) -> bool:
+        """Returns True if audio is actively playing through the speakers."""
+        if self._mixer_ready:
+            try:
+                if pygame.mixer.music.get_busy():
+                    return True
+            except Exception:
+                pass
+        return self._is_speaking
+
     def register_state_callback(self, callback):
         """Callback format: callback(is_speaking: bool)"""
         self._callbacks.append(callback)
@@ -100,6 +111,8 @@ class TTSEngine:
                     self._sapi5_engine.stop()
                 except Exception:
                     pass
+        if self._is_speaking:
+            self._notify(False)
 
     # ------------------------------------------------------------------ #
     # Worker Loop                                                          #
@@ -180,6 +193,11 @@ class TTSEngine:
     # SAPI5 Native Windows Voice                                         #
     # ------------------------------------------------------------------ #
     def _speak_sapi5(self, text: str):
+        try:
+            import pythoncom
+            pythoncom.CoInitialize()
+        except Exception:
+            pass
         with self._sapi5_lock:
             if self._sapi5_engine is None:
                 self._init_sapi5()

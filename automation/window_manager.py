@@ -13,23 +13,30 @@ class WindowManager:
         windows = []
 
         def enum_handler(hwnd, extra):
-            if win32gui.IsWindowVisible(hwnd):
-                title = win32gui.GetWindowText(hwnd).strip()
-                if title:
-                    # Filter out system utility windows
-                    if title not in ["Program Manager", "Settings", "Windows Input Experience"]:
-                        try:
-                            _, pid = win32process.GetWindowThreadProcessId(hwnd)
-                            windows.append({"hwnd": hwnd, "title": title, "pid": pid})
-                        except Exception:
-                            pass
+            try:
+                if win32gui.IsWindowVisible(hwnd):
+                    title = win32gui.GetWindowText(hwnd).strip()
+                    if title:
+                        # Filter out system utility windows
+                        if title not in ["Program Manager", "Settings", "Windows Input Experience"]:
+                            try:
+                                _, pid = win32process.GetWindowThreadProcessId(hwnd)
+                                windows.append({"hwnd": hwnd, "title": title, "pid": pid})
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+            return True
 
-        win32gui.EnumWindows(enum_handler, None)
+        try:
+            win32gui.EnumWindows(enum_handler, None)
+        except Exception as e:
+            logger.debug(f"[WindowManager] EnumWindows notice: {e}")
         return windows
 
     @staticmethod
     def focus_window(title_or_keyword: str) -> bool:
-        """Brings the matching window to foreground forcefully."""
+        """Brings the matching window to foreground forcefully without GUI deadlocks."""
         target = title_or_keyword.lower().strip()
         windows = WindowManager.get_open_windows()
         
@@ -44,15 +51,33 @@ class WindowManager:
             return False
 
         try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            kernel32 = ctypes.windll.kernel32
+
             # Force restore if minimized
             win32gui.ShowWindow(match_hwnd, win32con.SW_RESTORE)
-            
-            # Windows API foreground lock workaround: send Alt key pulse first
-            import pyautogui
-            pyautogui.press("alt")
-            
-            win32gui.SetForegroundWindow(match_hwnd)
-            time.sleep(0.15)
+
+            # Safe Win32 foreground attach — avoids synthetic Alt key pulses that trigger
+            # modal menu loops or deadlock low-level keyboard hooks
+            cur_thread = kernel32.GetCurrentThreadId()
+            fg_hwnd = user32.GetForegroundWindow()
+            if fg_hwnd and fg_hwnd != match_hwnd:
+                fg_pid = ctypes.c_ulong()
+                fg_thread = user32.GetWindowThreadProcessId(fg_hwnd, ctypes.byref(fg_pid))
+                if fg_thread != cur_thread:
+                    user32.AttachThreadInput(cur_thread, fg_thread, True)
+                    user32.SetForegroundWindow(match_hwnd)
+                    user32.BringWindowToTop(match_hwnd)
+                    user32.AttachThreadInput(cur_thread, fg_thread, False)
+                else:
+                    user32.SetForegroundWindow(match_hwnd)
+                    user32.BringWindowToTop(match_hwnd)
+            else:
+                user32.SetForegroundWindow(match_hwnd)
+                user32.BringWindowToTop(match_hwnd)
+
+            time.sleep(0.08)
             logger.info(f"[WindowManager] Focused window (HWND {match_hwnd})")
             return True
         except Exception as e:

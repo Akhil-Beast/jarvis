@@ -48,6 +48,8 @@ class GuiSignals(QObject):
     tts_state = Signal(bool)
     plan_ready = Signal(object)
     planning_started = Signal(str)
+    emergency_stop_triggered = Signal()
+    toggle_requested = Signal()
 
 class MainWindow(QMainWindow):
     """Modern Desktop HUD Interface for JARVIS Voice Control Assistant."""
@@ -56,6 +58,9 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.voice_listener = voice_listener
         self.hotkey_manager = hotkey_manager
+
+        self._brain_worker = None
+        self._is_planning = False
 
         self.signals = GuiSignals()
         self._connect_signals()
@@ -85,6 +90,8 @@ class MainWindow(QMainWindow):
         self.signals.state_changed.connect(self._on_state_changed)
         self.signals.step_updated.connect(self._on_step_updated)
         self.signals.tts_state.connect(self._on_tts_state)
+        self.signals.emergency_stop_triggered.connect(self.emergency_stop)
+        self.signals.toggle_requested.connect(self.toggle_assistant)
 
         # Wire voice listener callbacks to Qt signals
         self.voice_listener.on_level = lambda lvl: self.signals.audio_level.emit(lvl)
@@ -240,6 +247,21 @@ class MainWindow(QMainWindow):
             min-height: 24px;
         """)
         center_layout.addWidget(self.lbl_transcript)
+
+        # Autonomous Cognitive Thought Display Banner
+        self.lbl_thought = QLabel("🧠 COGNITIVE REASONING: Standing by with autonomous situational awareness.")
+        self.lbl_thought.setAlignment(Qt.AlignCenter)
+        self.lbl_thought.setWordWrap(True)
+        self.lbl_thought.setStyleSheet("""
+            font-size: 12px;
+            color: #fbbf24;
+            background-color: #171f2e;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 6px 14px;
+            min-height: 20px;
+        """)
+        center_layout.addWidget(self.lbl_thought)
         layout.addWidget(center_card, stretch=2)
 
         # 3. Action Execution Pipeline Table
@@ -351,19 +373,31 @@ class MainWindow(QMainWindow):
                 self.avatar.set_state("STANDBY")
 
     def _on_transcript_received(self, text: str):
+        # Prevent concurrent brain threads from clobbering state and freezing Qt
+        if self._is_planning or orchestrator.is_running:
+            logger.info(f"[MainWindow] Assistant busy, skipping overlapping input: '{text}'")
+            return
+
+        self._is_planning = True
         self.lbl_transcript.setText(f"You said: \"{text}\"")
-        self.lbl_status.setText(f"🧠 Planning: '{text}'…")
+        self.lbl_status.setText(f"🧠 Thinking: '{text}'…")
+        self.lbl_thought.setText("🧠 Thinking on my own: Analyzing situational context & formulating strategy…")
         self.hud.set_state("THINKING")
         self.avatar.set_state("THINKING")
 
-        # Spawn off-thread worker — prevents GUI freeze during Gemini API calls
-        self._brain_worker = BrainWorker(text)
+        # Spawn off-thread worker with parent=self so Qt manages lifecycle safely
+        self._brain_worker = BrainWorker(text, parent=self)
         self._brain_worker.plan_ready.connect(self._on_plan_ready)
         self._brain_worker.error.connect(self._on_plan_error)
+        self._brain_worker.finished.connect(self._on_brain_worker_finished)
         self._brain_worker.start()
+
+    def _on_brain_worker_finished(self):
+        self._is_planning = False
 
     def _on_plan_ready(self, plan: ActionPlan):
         """Receives the ActionPlan on the main thread after BrainWorker finishes."""
+        self._is_planning = False
         # Restore UI state
         if self.voice_listener.is_active:
             self.hud.set_state("LISTENING")
@@ -373,6 +407,14 @@ class MainWindow(QMainWindow):
         else:
             self.hud.set_state("STANDBY")
             self.avatar.set_state("STANDBY")
+
+        # Display autonomous thought process
+        if getattr(plan, "thought", None):
+            self.lbl_thought.setText(f"🧠 Thought: {plan.thought}")
+        elif getattr(plan, "spoken_text", None):
+            self.lbl_thought.setText(f"🧠 {plan.spoken_text}")
+        else:
+            self.lbl_thought.setText(f"🧠 {plan.explanation}")
 
         # Populate execution table
         self.table.setRowCount(len(plan.steps))
@@ -387,6 +429,7 @@ class MainWindow(QMainWindow):
 
     def _on_plan_error(self, error_msg: str):
         """Handles brain planning errors gracefully."""
+        self._is_planning = False
         self.lbl_status.setText(f"⚠ Planning error — retrying with fallback")
         self.lbl_status.setStyleSheet("font-size: 12px; color: #f59e0b;")
         logger.error(f"[MainWindow] BrainWorker error: {error_msg}")
@@ -413,14 +456,22 @@ class MainWindow(QMainWindow):
         self.table.setRowCount(0)
 
     def _confirm_destructive_action(self, action_description: str) -> bool:
-        """Pops up confirmation dialog on UI thread."""
-        ret = QMessageBox.question(
-            self,
-            "Security Confirmation Required",
-            f"JARVIS is about to execute a potentially destructive action:\n\n{action_description}\n\nDo you authorize this?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        return ret == QMessageBox.Yes
+        """Pops up confirmation dialog safely on UI thread."""
+        try:
+            from PySide6.QtCore import QThread
+            if QThread.currentThread() != self.thread():
+                logger.warning(f"[MainWindow] Background confirmation for: {action_description}")
+                return False
+            ret = QMessageBox.question(
+                self,
+                "Security Confirmation Required",
+                f"JARVIS is about to execute a potentially destructive action:\n\n{action_description}\n\nDo you authorize this?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            return ret == QMessageBox.Yes
+        except Exception as e:
+            logger.error(f"[MainWindow] Confirmation error: {e}")
+            return False
 
     def closeEvent(self, event):
         if config.minimize_to_tray_on_close:
