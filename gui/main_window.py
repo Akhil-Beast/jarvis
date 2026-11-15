@@ -254,6 +254,18 @@ class MainWindow(QMainWindow):
         pipe_header.addWidget(lbl_pipe_title)
         pipe_header.addStretch()
 
+        btn_vision = QPushButton("👁 Inspect Screen")
+        btn_vision.setObjectName("btnSecondary")
+        btn_vision.setToolTip("Take a screenshot and use Gemini Vision to see what is on the screen")
+        btn_vision.clicked.connect(lambda: self._on_transcript_received("what is on my screen"))
+        pipe_header.addWidget(btn_vision)
+
+        btn_apks = QPushButton("📱 Find APKs")
+        btn_apks.setObjectName("btnSecondary")
+        btn_apks.setToolTip("Scan Desktop, Downloads, and Phone for APK files")
+        btn_apks.clicked.connect(lambda: self._on_transcript_received("find all apks"))
+        pipe_header.addWidget(btn_apks)
+
         btn_clear = QPushButton("Clear")
         btn_clear.setObjectName("btnSecondary")
         btn_clear.clicked.connect(self._clear_table)

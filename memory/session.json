@@ -1,82 +1,82 @@
 [
   {
     "role": "user",
-    "content": "Raste Mein bol rahe the bahut kharcha karte"
-  },
-  {
-    "role": "user",
-    "content": "pitaai na lagaen"
-  },
-  {
-    "role": "user",
-    "content": "new Aditi bol rahe the"
-  },
-  {
-    "role": "assistant",
-    "content": "Direct text injection"
-  },
-  {
-    "role": "user",
-    "content": "how to open chrome"
-  },
-  {
-    "role": "assistant",
-    "content": "open chrome"
-  },
-  {
-    "role": "user",
-    "content": "tell me how to take a screenshot"
-  },
-  {
-    "role": "assistant",
-    "content": "screenshot"
-  },
-  {
-    "role": "user",
-    "content": "create a folder named my_project"
-  },
-  {
-    "role": "assistant",
-    "content": "create folder my_project"
-  },
-  {
-    "role": "user",
-    "content": "how to execute task open solidworks"
-  },
-  {
-    "role": "assistant",
-    "content": "solidworks"
-  },
-  {
-    "role": "user",
-    "content": "type hello world this is a test"
-  },
-  {
-    "role": "assistant",
-    "content": "handy direct typing"
-  },
-  {
-    "role": "user",
-    "content": "can you please increase the volume"
-  },
-  {
-    "role": "assistant",
-    "content": "volume up"
-  },
-  {
-    "role": "user",
-    "content": "what time is it"
-  },
-  {
-    "role": "assistant",
-    "content": "time"
-  },
-  {
-    "role": "user",
-    "content": "turn on spotify and play lo-fi music"
+    "content": "nice"
   },
   {
     "role": "assistant",
     "content": "Executed: Autonomous Gemini Action Plan"
+  },
+  {
+    "role": "user",
+    "content": "close"
+  },
+  {
+    "role": "assistant",
+    "content": "Executed: Autonomous Gemini Action Plan"
+  },
+  {
+    "role": "user",
+    "content": "open anti grav"
+  },
+  {
+    "role": "assistant",
+    "content": "open anti grav"
+  },
+  {
+    "role": "user",
+    "content": "what is on my screen"
+  },
+  {
+    "role": "assistant",
+    "content": "vision inspect screen"
+  },
+  {
+    "role": "user",
+    "content": "do you see the apk on screen"
+  },
+  {
+    "role": "assistant",
+    "content": "vision find apk on screen"
+  },
+  {
+    "role": "user",
+    "content": "find all apks"
+  },
+  {
+    "role": "assistant",
+    "content": "find all apks"
+  },
+  {
+    "role": "user",
+    "content": "double click BankAnalyzer"
+  },
+  {
+    "role": "assistant",
+    "content": "double click bankanalyzer"
+  },
+  {
+    "role": "user",
+    "content": "click on Chrome"
+  },
+  {
+    "role": "assistant",
+    "content": "click chrome"
+  },
+  {
+    "role": "user",
+    "content": "install the apk"
+  },
+  {
+    "role": "assistant",
+    "content": "install apk"
+  },
+  {
+    "role": "user",
+    "content": "inspect the apk"
+  },
+  {
+    "role": "assistant",
+    "content": "inspect apk"
   }
 ]

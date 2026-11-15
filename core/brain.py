@@ -206,6 +206,71 @@ class AIBrain:
                 {"action": "speak", "text": "Screenshot saved to your desktop."}
             ], "screenshot")
 
+        # ---- SCREEN VISION & WHAT'S ON SCREEN ----
+        if re.search(r"(what('s| is) on (my |the )?screen|look at (my |the )?screen|see (my |the )?screen|can you see (my |the )?screen|read (my |the )?screen|analyze (my |the )?screen|describe (my |the )?screen|what do you see)", c):
+            return ActionPlan([
+                {"action": "vision_inspect", "prompt": "Describe what is currently visible on this computer screen. Highlight any open applications, APK files, windows, and icons."}
+            ], "vision inspect screen")
+
+        # ---- APK VISION & SCREEN INTERACTION ----
+        if re.search(r"(do you see (the |any )?apk|find (the |any )?apk on (the |my )?screen|where is the apk|is there an apk|look for (the |an )?apk)", c):
+            return ActionPlan([
+                {"action": "vision_inspect", "prompt": "Examine this screen specifically for any APK files, Android packages, or app installers. State their exact file names and locations."}
+            ], "vision find apk on screen")
+
+        # APK: Find / Show all APKs
+        if re.search(r"^(show|find|list|where (are|is)|locate)\s+(?:all\s+)?(?:the\s+)?apks?$", c) or re.search(r"^apks?$", c):
+            return ActionPlan([
+                {"action": "apk_action", "command": "find", "target": ""}
+            ], "find all apks")
+
+        # APK: Install
+        m_inst = re.match(r"(?:install|sideload)\s+(?:the\s+)?(?:apk|app)?\s*(.*)", c)
+        if m_inst and ("apk" in c or "install" in c):
+            apk_target = m_inst.group(1).strip()
+            return ActionPlan([
+                {"action": "apk_action", "command": "install", "target": apk_target}
+            ], f"install apk {apk_target}")
+
+        # APK: Inspect / Details
+        m_insp = re.match(r"(?:inspect|check|details (?:of|for|on)|info (?:on|for))\s+(?:the\s+)?apk\s*(.*)", c)
+        if m_insp:
+            apk_target = m_insp.group(1).strip()
+            return ActionPlan([
+                {"action": "apk_action", "command": "inspect", "target": apk_target}
+            ], f"inspect apk {apk_target}")
+
+        # APK: Open folder / Show in Explorer
+        m_opn_apk = re.match(r"(?:open|show)\s+(?:the\s+)?apk\s*(.*)", c)
+        if m_opn_apk:
+            apk_target = m_opn_apk.group(1).strip()
+            return ActionPlan([
+                {"action": "apk_action", "command": "open", "target": apk_target}
+            ], f"open apk {apk_target}")
+
+        # ---- SCREEN TARGET CLICKING (UIA + VISION COORDINATES) ----
+        m_dclick = re.match(r"(?:double\s+click|doubleclick)\s+(?:on\s+)?(?:the\s+)?(.+)", c)
+        if m_dclick:
+            target = m_dclick.group(1).strip()
+            return ActionPlan([
+                {"action": "click_screen_target", "target": target, "click_type": "double"}
+            ], f"double click {target}")
+
+        m_rclick = re.match(r"(?:right\s+click|rightclick)\s+(?:on\s+)?(?:the\s+)?(.+)", c)
+        if m_rclick:
+            target = m_rclick.group(1).strip()
+            return ActionPlan([
+                {"action": "click_screen_target", "target": target, "click_type": "right"}
+            ], f"right click {target}")
+
+        m_click = re.match(r"^click\s+(?:on\s+)?(?:the\s+)?(.+)", c)
+        if m_click:
+            target = m_click.group(1).strip()
+            if target not in ["here", "now", "it", "this"]:
+                return ActionPlan([
+                    {"action": "click_screen_target", "target": target, "click_type": "single"}
+                ], f"click {target}")
+
         # ---- LOCK WORKSTATION ----
         if re.search(r"(lock (pc|computer|workstation|screen)|lock my pc)", c):
             return ActionPlan([
@@ -444,6 +509,9 @@ Available Actions:
 - {{"action": "open_app", "target": "app_or_file_name"}}
 - {{"action": "focus_window", "target": "window_title"}}
 - {{"action": "close_window", "target": "window_title"}}
+- {{"action": "vision_inspect", "prompt": "what to look for on screen or finding APKs"}}
+- {{"action": "click_screen_target", "target": "element or APK name to click on screen", "click_type": "single|double|right"}}
+- {{"action": "apk_action", "command": "find|inspect|install|open", "target": "optional_apk_name"}}
 - {{"action": "click_element", "name": "button_name"}}
 - {{"action": "type_text", "text": "text_to_type", "enter": true}}
 - {{"action": "hotkey", "keys": ["ctrl", "s"]}}

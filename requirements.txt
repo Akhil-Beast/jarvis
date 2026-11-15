@@ -10,6 +10,7 @@ pyperclip>=1.11.0
 # Desktop GUI & System Tray
 PySide6>=6.12.0
 Pillow>=13.0.0
+mss>=10.2.0
 
 # Voice Capture & Speech-to-Text
 pyaudio>=0.2.14

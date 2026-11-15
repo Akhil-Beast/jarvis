@@ -184,6 +184,50 @@ class TaskOrchestrator:
                 tts.speak(text)
                 return True
 
+            elif action == "vision_inspect":
+                from automation.screen_vision import screen_vision
+                prompt = step.get("prompt", "")
+                result = screen_vision.inspect_screen(prompt)
+                tts.speak(result)
+                return True
+
+            elif action == "click_screen_target":
+                from automation.screen_vision import screen_vision
+                target = step.get("target", "")
+                click_type = step.get("click_type", "single")
+                ok, msg = screen_vision.locate_and_interact(target, click_type)
+                tts.speak(msg)
+                return ok
+
+            elif action == "apk_action":
+                from automation.screen_vision import screen_vision
+                cmd = step.get("command", "find")
+                target = step.get("target", "")
+                if cmd in ["find", "open", "show"]:
+                    ok, msg = screen_vision.show_apk_in_explorer(target)
+                    tts.speak(msg)
+                    return ok
+                elif cmd == "install":
+                    ok, msg = screen_vision.install_apk(target)
+                    tts.speak(msg)
+                    return ok
+                elif cmd == "inspect":
+                    apks = screen_vision.find_all_apks()
+                    match = None
+                    if target:
+                        for a in apks:
+                            if target.lower() in a["filename"].lower() or target.lower() in a["app_name"].lower():
+                                match = a
+                                break
+                    elif apks:
+                        match = apks[0]
+                    if match:
+                        desc = f"APK {match['app_name']}, package {match['package_name']}, file size {match['size_mb']} megabytes."
+                    else:
+                        desc = f"Could not find APK {target} on this computer, sir."
+                    tts.speak(desc)
+                    return True
+
         except Exception as e:
             logger.error(f"[Orchestrator] Error running action '{action}': {e}")
             return False
