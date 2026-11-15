@@ -1,11 +1,15 @@
 import os
 import subprocess
 import time
-import winreg
 from pathlib import Path
 import psutil
 from core.safety import logger
 from automation.window_manager import window_manager
+
+try:
+    import winreg
+except ImportError:
+    winreg = None
 
 
 class AppLauncher:
@@ -48,6 +52,8 @@ class AppLauncher:
 
     def _refresh_installed_apps(self):
         """Scans Windows Registry for registered application paths."""
+        if winreg is None:
+            return
         paths = [
             (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths"),
             (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths")

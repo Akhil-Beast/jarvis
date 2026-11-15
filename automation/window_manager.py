@@ -1,8 +1,16 @@
 import time
-import win32gui
-import win32con
-import win32process
 from core.safety import logger
+
+try:
+    import win32gui
+    import win32con
+    import win32process
+    HAS_WIN32 = True
+except ImportError:
+    win32gui = None
+    win32con = None
+    win32process = None
+    HAS_WIN32 = False
 
 class WindowManager:
     """Manages active Windows top-level windows, focusing, snapping, and closing."""
@@ -10,6 +18,9 @@ class WindowManager:
     @staticmethod
     def get_open_windows() -> list[dict]:
         """Returns a list of visible user application windows."""
+        if not HAS_WIN32 or win32gui is None:
+            return []
+
         windows = []
 
         def enum_handler(hwnd, extra):
@@ -119,14 +130,24 @@ class WindowManager:
     @staticmethod
     def maximize_active():
         """Maximizes the currently active window."""
-        hwnd = win32gui.GetForegroundWindow()
-        if hwnd:
-            win32gui.ShowWindow(hwnd, win32con.SW_MAXIMIZE)
+        if not HAS_WIN32 or win32gui is None:
+            return
+        try:
+            hwnd = win32gui.GetForegroundWindow()
+            if hwnd:
+                win32gui.ShowWindow(hwnd, win32con.SW_MAXIMIZE)
+        except Exception:
+            pass
 
     @staticmethod
     def get_active_window_title() -> str:
         """Returns the title of the currently active (foreground) window."""
-        hwnd = win32gui.GetForegroundWindow()
-        return win32gui.GetWindowText(hwnd) if hwnd else ""
+        if not HAS_WIN32 or win32gui is None:
+            return ""
+        try:
+            hwnd = win32gui.GetForegroundWindow()
+            return win32gui.GetWindowText(hwnd) if hwnd else ""
+        except Exception:
+            return ""
 
 window_manager = WindowManager()

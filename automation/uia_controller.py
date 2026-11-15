@@ -1,16 +1,28 @@
 import time
-import uiautomation as auto
 from core.safety import logger
+
+try:
+    import uiautomation as auto
+    HAS_UIA = True
+except ImportError:
+    auto = None
+    HAS_UIA = False
 
 class UIAController:
     """Controls Windows UI elements via Microsoft UI Automation Accessibility Framework."""
 
     def __init__(self):
-        auto.SetGlobalSearchTimeout(1.5)
+        if HAS_UIA and auto is not None:
+            try:
+                auto.SetGlobalSearchTimeout(1.5)
+            except Exception:
+                pass
 
     @staticmethod
     def get_focused_window():
         """Returns the UIA Control for the current foreground window."""
+        if not HAS_UIA or auto is None:
+            return None
         try:
             return auto.GetForegroundControl()
         except Exception:
@@ -18,9 +30,14 @@ class UIAController:
 
     def click_element_by_name(self, name: str, control_type: str = "") -> bool:
         """Finds a button or control by its text/name in the active window and clicks it."""
+        if not HAS_UIA or auto is None:
+            return False
         fg = self.get_focused_window()
         if not fg:
-            fg = auto.GetRootControl()
+            try:
+                fg = auto.GetRootControl()
+            except Exception:
+                return False
 
         name_clean = name.strip()
         logger.info(f"[UIA] Searching for element '{name_clean}' (type={control_type})...")

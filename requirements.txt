@@ -1,33 +1,37 @@
-# Windows Automation & UI Control
-pywin32>=312
-uiautomation>=2.0.29
-pyautogui>=0.9.54
-pygetwindow>=0.0.9
-psutil>=7.2.0
-pynput>=1.8.2
-pyperclip>=1.11.0
-
-# Desktop GUI & System Tray
-PySide6>=6.12.0
-Pillow>=13.0.0
-mss>=10.2.0
-
-# Voice Capture & Speech-to-Text
-pyaudio>=0.2.14
-SpeechRecognition>=3.17.0
-sounddevice>=0.5.6
-numpy>=2.4.0
-
-# Text-to-Speech (Neural Edge-TTS, Offline SAPI5 & Cloud)
-edge-tts>=7.3.0
-pygame>=2.6.0
-pyttsx3>=2.99
-requests>=2.34.0
+# Core Web & 24/7 Cloud Service (Render & Cloud Deployments)
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+jinja2>=3.1.4
+aiofiles>=24.1.0
+httpx>=0.28.0
 
 # AI Brain & Configuration
-pydantic>=2.14.0
+pydantic>=2.10.0
 python-dotenv>=1.0.1
 google-genai>=2.34.0
+psutil>=7.0.0
+requests>=2.32.0
+Pillow>=10.4.0
 
-# Packaging
-pyinstaller>=6.22.0
+# Text-to-Speech (Neural Edge-TTS & Audio)
+edge-tts>=7.3.0
+pygame>=2.6.0
+pyttsx3>=2.90; sys_platform == 'win32'
+
+# Windows Automation & UI Control (Windows only)
+pywin32>=306; sys_platform == 'win32'
+uiautomation>=2.0.29; sys_platform == 'win32'
+pyautogui>=0.9.54; sys_platform == 'win32'
+pygetwindow>=0.0.9; sys_platform == 'win32'
+pynput>=1.7.6; sys_platform == 'win32'
+pyperclip>=1.9.0
+
+# Desktop GUI & System Tray (Desktop only)
+PySide6>=6.6.0; sys_platform == 'win32'
+mss>=9.0.0
+
+# Voice Capture & Speech-to-Text
+SpeechRecognition>=3.10.0
+sounddevice>=0.4.6; sys_platform == 'win32'
+pyaudio>=0.2.14; sys_platform == 'win32'
+numpy>=1.26.0
