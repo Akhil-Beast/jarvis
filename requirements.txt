@@ -18,7 +18,9 @@ SpeechRecognition>=3.17.0
 sounddevice>=0.5.6
 numpy>=2.4.0
 
-# Text-to-Speech (Offline SAPI5 & Cloud)
+# Text-to-Speech (Neural Edge-TTS, Offline SAPI5 & Cloud)
+edge-tts>=7.3.0
+pygame>=2.6.0
 pyttsx3>=2.99
 requests>=2.34.0
 

@@ -53,7 +53,6 @@ class AIBrain:
         local_plan = self._try_local_rules(cmd)
         if local_plan:
             logger.info(f"[Brain] Matched local action rule ({local_plan.explanation})")
-            # Record JARVIS response
             mem.add("assistant", local_plan.explanation)
             return local_plan
 
@@ -63,40 +62,37 @@ class AIBrain:
             mem.add("assistant", f"Skill: {skill_plan.explanation}")
             return skill_plan
 
-        # 2. Autonomous LLM planner (Gemini) with conversation memory
+        # 2. Conversational Thinking & Voice Reply: Communicate naturally
+        if self._is_conversational_query(raw_cmd):
+            logger.info(f"[Brain] Conversational query detected — activating JARVIS thinking...")
+            thought_plan = self._think_and_converse(raw_cmd)
+            if thought_plan:
+                mem.add("assistant", thought_plan.explanation)
+                return thought_plan
+
+        # 3. Autonomous LLM desktop action planner (Gemini)
         llm_plan = self._try_llm_planning(cmd)
         if llm_plan and not self._is_passive_tutorial(llm_plan, cmd):
             mem.add("assistant", f"Executed: {llm_plan.explanation}")
             return llm_plan
 
-        # 3. Smart execution fallback — open/run target directly
+        # 4. Smart execution fallback — open/run target directly
         shell_plan = self._smart_shell_fallback(cmd)
         if shell_plan:
             mem.add("assistant", shell_plan.explanation)
             return shell_plan
 
-        # 4. Handy Dictation Fallback: If user is dictating sentences, inject directly into active window
-        if len(cmd.split()) >= 3 and not any(w in cmd.lower() for w in ["open", "close", "delete", "shutdown"]):
-            mem.add("assistant", "Direct text injection")
-            return ActionPlan(
-                steps=[
-                    {"action": "type_text", "text": raw_cmd, "enter": False},
-                    {"action": "speak", "text": "Typed into active window."}
-                ],
-                explanation="Handy direct text injection fallback"
-            )
+        # 5. Conversational Fallback: Think and reply in voice rather than dumping user into browser!
+        conversational_fallback = self._think_and_converse(raw_cmd)
+        if conversational_fallback:
+            mem.add("assistant", conversational_fallback.explanation)
+            return conversational_fallback
 
-        # 5. Last resort — launch Google search for query
-        mem.add("assistant", f"Web search: {cmd}")
+        # 6. Final conversational voice standby
+        mem.add("assistant", "At your service")
         return ActionPlan(
-            steps=[
-                {"action": "open_app", "target": "chrome"},
-                {"action": "wait", "seconds": 1.2},
-                {"action": "hotkey", "keys": ["ctrl", "t"]},
-                {"action": "type_text", "text": f"https://www.google.com/search?q={cmd.replace(' ', '+')}", "enter": True},
-                {"action": "speak", "text": f"Searching for {cmd}."}
-            ],
-            explanation="Web search execution"
+            steps=[{"action": "speak", "text": f"I am at your service, {config.user_name}. How may I assist you?"}],
+            explanation="Conversational standby"
         )
 
     # ------------------------------------------------------------------ #
@@ -112,6 +108,98 @@ class AIBrain:
                 return ActionPlan(steps=steps, explanation=f"Skill:{skill.name}")
         except Exception as e:
             logger.warning(f"[Brain] Skill registry error: {e}")
+        return None
+
+    # ------------------------------------------------------------------ #
+    # Conversational Thinking & Natural Voice Reply                      #
+    # ------------------------------------------------------------------ #
+    def _is_conversational_query(self, cmd: str) -> bool:
+        """Determines if the command is a conversational query, thought request, or chat."""
+        c = cmd.lower().strip()
+
+        # If user explicitly starts with a concrete action verb, it's NOT purely conversational
+        action_verbs = [
+            "open ", "launch ", "start ", "close ", "kill ", "click ", "double click ",
+            "type ", "press ", "scroll ", "volume ", "mute ", "unmute ", "screenshot",
+            "lock ", "shutdown", "restart", "create folder", "create file", "new folder",
+            "new file", "delete file", "install apk", "install app", "switch to "
+        ]
+        if any(c.startswith(a) for a in action_verbs):
+            return False
+
+        conv_patterns = [
+            r"^(?:what|why|how|who|when|where|is|are|can|could|would|do|does|will|should)\b",
+            r"\b(?:think|opinion|believe|feel|suggest|recommend|advise|explain|describe)\b",
+            r"\b(?:joke|riddle|story|poem|quote|trivia|meaning|definition)\b",
+            r"^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening)|howdy)\b",
+            r"^(?:thank\s+you|thanks|good\s+job|well\s+done)\b",
+            r"\b(?:who\s+(?:are\s+you|made\s+you)|your\s+name|about\s+yourself|tell\s+me\s+about\s+you)\b",
+            r"\b(?:talk\s+to\s+me|converse|chat|are\s+you\s+there|you\s+listening)\b",
+        ]
+        return any(re.search(p, c) for p in conv_patterns)
+
+    def _think_and_converse(self, text: str) -> ActionPlan | None:
+        """
+        JARVIS Conversational Thinking Engine:
+        Uses Gemini to think, analyze context, and generate an articulate, witty,
+        British-butler-style vocal reply.
+        """
+        if not config.gemini_api_key:
+            return ActionPlan(
+                steps=[{"action": "speak", "text": "I am standing by, Sir. Please configure my Gemini API key to enable my conversational faculties."}],
+                explanation="No Gemini API Key"
+            )
+
+        mem = _get_memory()
+        context_str = mem.get_context_string(max_turns=6)
+        context_section = f"Recent conversation dialogue:\n{context_str}\n\n" if context_str else ""
+
+        system_instruction = f"""You are J.A.R.V.I.S., the highly intelligent, sophisticated, and witty AI companion and personal assistant to Sir (Akhil).
+Tone & Cadence:
+- Authentic British butler persona (like Paul Bettany's J.A.R.V.I.S. in Iron Man).
+- Always address the user politely as 'Sir'.
+- Speak with intelligence, warmth, understated dry humor, and supreme competence.
+- Provide thoughtful, accurate, and insightful answers.
+- Keep responses concise (2 to 3 sentences max) so voice playback is natural and conversational.
+- NEVER use markdown formatting (no asterisks, bolding, bullet points, numbers, hashtags, or code blocks). Output clean, spoken English."""
+
+        try:
+            from google import genai
+            from google.genai import types
+            import concurrent.futures
+
+            client = genai.Client(api_key=config.gemini_api_key)
+
+            def _call():
+                return client.models.generate_content(
+                    model=config.gemini_model,
+                    contents=f"{context_section}User: {text}\nJARVIS:",
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        temperature=0.7,
+                        max_output_tokens=220
+                    )
+                )
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                fut = executor.submit(_call)
+                try:
+                    resp = fut.result(timeout=6)
+                    reply = resp.text.strip()
+                    # Clean any trailing markdown or quotes
+                    reply = re.sub(r"[\*#`_]", "", reply).strip()
+                    if reply:
+                        logger.info(f"[Brain/Converse] Thought reply: '{reply}'")
+                        return ActionPlan(
+                            steps=[{"action": "speak", "text": reply}],
+                            explanation=f"Conversational: {reply[:45]}..."
+                        )
+                except concurrent.futures.TimeoutError:
+                    logger.warning("[Brain/Converse] Conversational thinking timed out.")
+
+        except Exception as e:
+            logger.error(f"[Brain/Converse] Thinking error: {e}")
+
         return None
 
     # ------------------------------------------------------------------ #

@@ -1,17 +1,24 @@
+import asyncio
+import os
 import queue
+import tempfile
 import threading
+import time
 import requests
+import pygame
+
 from config.settings import config
 from core.safety import logger, safety
 from core.omnivoice_engine import omnivoice_engine
 
 
 class TTSEngine:
-    """Thread-safe Text-to-Speech Engine supporting SAPI5 (offline) & ElevenLabs.
+    """Thread-safe Text-to-Speech Engine.
 
-    Maintains a persistent pyttsx3 engine instance (created once) with a
-    thread lock so it is never re-initialised per utterance, eliminating the
-    lag and instability that caused the previous per-call init pattern.
+    Supports:
+    1. Edge-TTS (Default): Ultra-realistic British neural voice ('en-GB-RyanNeural') via pygame.mixer
+    2. ElevenLabs: Premium cloud voice
+    3. SAPI5 (Offline fallback): Windows native David/Zira
     """
 
     def __init__(self):
@@ -19,7 +26,15 @@ class TTSEngine:
         self._is_speaking = False
         self._callbacks = []
 
-        # Persistent SAPI5 engine — initialised once, locked for each utterance
+        # Initialize pygame.mixer for zero-latency audio playback
+        try:
+            pygame.mixer.init()
+            self._mixer_ready = True
+        except Exception as e:
+            logger.warning(f"[TTS] pygame.mixer init warning: {e}")
+            self._mixer_ready = False
+
+        # Persistent SAPI5 engine as offline fallback
         self._sapi5_engine = None
         self._sapi5_lock = threading.Lock()
         self._init_sapi5()
@@ -28,10 +43,9 @@ class TTSEngine:
         self._thread.start()
 
     # ------------------------------------------------------------------ #
-    # SAPI5 engine lifecycle                                               #
+    # SAPI5 engine lifecycle (Offline fallback)                           #
     # ------------------------------------------------------------------ #
     def _init_sapi5(self):
-        """Create the persistent pyttsx3 engine. Called once at startup."""
         try:
             import pyttsx3
             engine = pyttsx3.init()
@@ -41,9 +55,9 @@ class TTSEngine:
             if voices and 0 <= config.sapi5_voice_index < len(voices):
                 engine.setProperty("voice", voices[config.sapi5_voice_index].id)
             self._sapi5_engine = engine
-            logger.info("[TTS] Persistent SAPI5 engine initialised.")
+            logger.info("[TTS] Persistent SAPI5 fallback engine initialised.")
         except Exception as e:
-            logger.warning(f"[TTS] SAPI5 init failed: {e}. Will retry per utterance.")
+            logger.warning(f"[TTS] SAPI5 init failed: {e}")
             self._sapi5_engine = None
 
     # ------------------------------------------------------------------ #
@@ -69,13 +83,27 @@ class TTSEngine:
         self._speech_queue.put(text.strip())
 
     def stop(self):
-        """Clear queued speech."""
+        """Immediately stop currently playing audio and clear queued speech."""
         while not self._speech_queue.empty():
             try:
                 self._speech_queue.get_nowait()
             except queue.Empty:
                 break
+        if self._mixer_ready:
+            try:
+                pygame.mixer.music.stop()
+            except Exception:
+                pass
+        with self._sapi5_lock:
+            if self._sapi5_engine:
+                try:
+                    self._sapi5_engine.stop()
+                except Exception:
+                    pass
 
+    # ------------------------------------------------------------------ #
+    # Worker Loop                                                          #
+    # ------------------------------------------------------------------ #
     def _worker_loop(self):
         while True:
             text = self._speech_queue.get()
@@ -85,15 +113,17 @@ class TTSEngine:
 
             self._notify(True)
             try:
-                if config.tts_engine == "elevenlabs" and config.elevenlabs_api_key:
+                engine_choice = getattr(config, "tts_engine", "edge_tts")
+                if engine_choice == "elevenlabs" and config.elevenlabs_api_key:
                     self._speak_elevenlabs(text)
-                elif config.tts_engine == "omnivoice" and omnivoice_engine.is_available:
+                elif engine_choice == "omnivoice" and omnivoice_engine.is_available:
                     self._speak_omnivoice(text)
+                elif engine_choice == "edge_tts":
+                    self._speak_edge_tts(text)
                 else:
                     self._speak_sapi5(text)
             except Exception as e:
-                logger.error(f"[TTS] Speech error: {e}")
-                # Fallback to SAPI5
+                logger.error(f"[TTS] Speech synthesis error: {e}. Falling back to SAPI5.")
                 try:
                     self._speak_sapi5(text)
                 except Exception as fe:
@@ -102,8 +132,54 @@ class TTSEngine:
                 self._notify(False)
                 self._speech_queue.task_done()
 
+    # ------------------------------------------------------------------ #
+    # Edge-TTS Neural Voice (British JARVIS Persona)                     #
+    # ------------------------------------------------------------------ #
+    def _speak_edge_tts(self, text: str):
+        import edge_tts
+
+        # Clean conversational text of markdown markers
+        clean_text = text.replace("*", "").replace("#", "").replace("`", "").strip()
+        voice = getattr(config, "edge_tts_voice", "en-GB-RyanNeural")
+
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            tmp_path = f.name
+
+        async def _synthesize():
+            comm = edge_tts.Communicate(clean_text, voice)
+            await comm.save(tmp_path)
+
+        try:
+            asyncio.run(_synthesize())
+
+            if self._mixer_ready:
+                pygame.mixer.music.load(tmp_path)
+                pygame.mixer.music.play()
+                while pygame.mixer.music.get_busy():
+                    if safety.is_aborted:
+                        pygame.mixer.music.stop()
+                        break
+                    time.sleep(0.04)
+            else:
+                self._speak_sapi5(text)
+        except Exception as e:
+            logger.warning(f"[TTS] Edge-TTS failed: {e}. Retrying via SAPI5.")
+            self._speak_sapi5(text)
+        finally:
+            if self._mixer_ready:
+                try:
+                    pygame.mixer.music.unload()
+                except Exception:
+                    pass
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------ #
+    # SAPI5 Native Windows Voice                                         #
+    # ------------------------------------------------------------------ #
     def _speak_sapi5(self, text: str):
-        """Speak via persistent pyttsx3 engine with thread lock."""
         with self._sapi5_lock:
             if self._sapi5_engine is None:
                 self._init_sapi5()
@@ -115,14 +191,12 @@ class TTSEngine:
                 self._sapi5_engine.runAndWait()
             except Exception as e:
                 logger.warning(f"[TTS] SAPI5 utterance error ({e}), reinitialising engine.")
-                # Engine may be in a bad state — rebuild it
                 try:
                     self._sapi5_engine.stop()
                 except Exception:
                     pass
                 self._sapi5_engine = None
                 self._init_sapi5()
-                # Retry once after reinit
                 if self._sapi5_engine:
                     try:
                         self._sapi5_engine.say(text)
@@ -130,9 +204,10 @@ class TTSEngine:
                     except Exception:
                         pass
 
+    # ------------------------------------------------------------------ #
+    # ElevenLabs / OmniVoice Fallbacks                                    #
+    # ------------------------------------------------------------------ #
     def _speak_omnivoice(self, text: str):
-        import tempfile
-        import os
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             wav_path = f.name
         try:
@@ -161,19 +236,27 @@ class TTSEngine:
         }
         resp = requests.post(url, json=data, headers=headers, timeout=10)
         if resp.status_code == 200:
-            import tempfile, os
             with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
                 f.write(resp.content)
                 tmp_path = f.name
-            import subprocess
-            subprocess.run(["powershell", "-c", f'(New-Object Media.SoundPlayer "{tmp_path}").PlaySync()'], check=False)
             try:
-                os.remove(tmp_path)
-            except Exception:
-                pass
+                if self._mixer_ready:
+                    pygame.mixer.music.load(tmp_path)
+                    pygame.mixer.music.play()
+                    while pygame.mixer.music.get_busy():
+                        if safety.is_aborted:
+                            pygame.mixer.music.stop()
+                            break
+                        time.sleep(0.04)
+            finally:
+                try:
+                    pygame.mixer.music.unload()
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
         else:
-            logger.warning(f"ElevenLabs TTS failed ({resp.status_code}): {resp.text}, falling back to SAPI5")
-            self._speak_sapi5(text)
+            logger.warning(f"[TTS] ElevenLabs failed ({resp.status_code}), falling back to Edge-TTS")
+            self._speak_edge_tts(text)
 
 
 tts = TTSEngine()

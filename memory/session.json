@@ -1,46 +1,6 @@
 [
   {
     "role": "user",
-    "content": "nice"
-  },
-  {
-    "role": "assistant",
-    "content": "Executed: Autonomous Gemini Action Plan"
-  },
-  {
-    "role": "user",
-    "content": "close"
-  },
-  {
-    "role": "assistant",
-    "content": "Executed: Autonomous Gemini Action Plan"
-  },
-  {
-    "role": "user",
-    "content": "open anti grav"
-  },
-  {
-    "role": "assistant",
-    "content": "open anti grav"
-  },
-  {
-    "role": "user",
-    "content": "what is on my screen"
-  },
-  {
-    "role": "assistant",
-    "content": "vision inspect screen"
-  },
-  {
-    "role": "user",
-    "content": "do you see the apk on screen"
-  },
-  {
-    "role": "assistant",
-    "content": "vision find apk on screen"
-  },
-  {
-    "role": "user",
     "content": "find all apks"
   },
   {
@@ -78,5 +38,45 @@
   {
     "role": "assistant",
     "content": "inspect apk"
+  },
+  {
+    "role": "user",
+    "content": "Jarvis, how are you feeling today?"
+  },
+  {
+    "role": "assistant",
+    "content": "Executed: Autonomous Gemini Action Plan"
+  },
+  {
+    "role": "user",
+    "content": "What do you think about artificial intelligence?"
+  },
+  {
+    "role": "assistant",
+    "content": "Conversational: I suppose I feel a certain fondness for the s..."
+  },
+  {
+    "role": "user",
+    "content": "Tell me a witty joke, Jarvis."
+  },
+  {
+    "role": "assistant",
+    "content": "Conversational: Right away, Sir. I would tell you a joke abou..."
+  },
+  {
+    "role": "user",
+    "content": "Can you explain quantum computing in simple terms?"
+  },
+  {
+    "role": "assistant",
+    "content": "Conversational: Quantum computing, Sir, is rather like a book..."
+  },
+  {
+    "role": "user",
+    "content": "Open Chrome"
+  },
+  {
+    "role": "assistant",
+    "content": "open chrome"
   }
 ]

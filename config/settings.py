@@ -34,7 +34,8 @@ class AppConfig(BaseModel):
     openai_model: str = "gpt-4o"
 
     # Voice / TTS
-    tts_engine: str = "sapi5"  # "sapi5" (offline Windows) or "elevenlabs"
+    tts_engine: str = "edge_tts"  # "edge_tts" (British neural), "sapi5" (offline), "elevenlabs"
+    edge_tts_voice: str = "en-GB-RyanNeural"  # Professional British JARVIS voice
     speech_rate: int = 190     # Words per minute
     speech_volume: float = 1.0 # 0.0 to 1.0
     sapi5_voice_index: int = 0
