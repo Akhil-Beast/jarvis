@@ -1,4 +1,14 @@
 import sys
+import os
+import threading
+import time
+import urllib.request
+
+# Safeguard standard streams for windowed / background runtimes
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w", encoding="utf-8")
 from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
@@ -9,6 +19,38 @@ from core.safety import logger
 from gui.main_window import MainWindow
 
 BASE_DIR = Path(__file__).resolve().parent
+
+
+def ensure_local_server():
+    """Starts the local JARVIS web server daemon on port 10000 if not already running."""
+    try:
+        urllib.request.urlopen("http://127.0.0.1:10000/health", timeout=1)
+        logger.info("[Main] Local JARVIS server is already online on port 10000.")
+        return
+    except Exception:
+        pass
+
+    logger.info("[Main] Starting embedded local JARVIS server on port 10000...")
+    import uvicorn
+    from server import app
+
+    def _run_server():
+        cfg = uvicorn.Config(app, host="127.0.0.1", port=10000, log_level="warning")
+        server = uvicorn.Server(cfg)
+        server.run()
+
+    t = threading.Thread(target=_run_server, daemon=True)
+    t.start()
+
+    # Wait briefly for server to bind
+    for _ in range(30):
+        try:
+            urllib.request.urlopen("http://127.0.0.1:10000/health", timeout=0.5)
+            logger.info("[Main] Local JARVIS server online and ready.")
+            break
+        except Exception:
+            time.sleep(0.15)
+
 
 def main():
     # Single instance enforcement via Windows named mutex
@@ -23,7 +65,10 @@ def main():
     except Exception as e:
         logger.debug(f"[Main] Single instance mutex check notice: {e}")
 
-    logger.info("Initializing JARVIS Desktop Automation Assistant...")
+    # Ensure local server is started first
+    ensure_local_server()
+
+    logger.info("Initializing JARVIS Desktop Assistant (Web HUD Mode)...")
     app = QApplication(sys.argv)
     app.setApplicationName("JARVIS Voice Assistant")
     app.setQuitOnLastWindowClosed(False)
@@ -36,7 +81,7 @@ def main():
     voice_listener = VoiceListener()
     hotkey_manager = HotkeyManager()
 
-    # Initialize Main GUI Window
+    # Initialize Main GUI Window (hosts the exact same Web HUD)
     window = MainWindow(voice_listener, hotkey_manager)
 
     # Wire hotkey callbacks to Qt signals (thread-safe queued invocation)
@@ -54,6 +99,7 @@ def main():
         logger.info("Starting minimized to system tray.")
 
     sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     main()

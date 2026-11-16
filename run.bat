@@ -15,10 +15,10 @@ if not exist "venv\Scripts\python.exe" (
 )
 
 echo Starting JARVIS Desktop Assistant...
-start "" "venv\Scripts\pythonw.exe" main.py
+start "JARVIS" "venv\Scripts\python.exe" main.py
 echo [OK] JARVIS is now running in the background and system tray.
 echo      - Speak "Hey JARVIS" to command
 echo      - Press Ctrl+Alt+Space to toggle HUD
 echo      - Press Escape to emergency abort
 echo.
-timeout /t 3 >nul
+ping 127.0.0.1 -n 3 >nul
