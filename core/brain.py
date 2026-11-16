@@ -242,7 +242,11 @@ LIVE ENVIRONMENT CONTEXT:
 {history_section}YOUR COGNITIVE PROCESS:
 1. THINK ON YOUR OWN FIRST: Analyze what Sir is asking or observing. Formulate your internal analytical thought process in 'thought' (explain your reasoning, contextual assessment, and chosen strategy).
 2. SPOKEN REPLY: Craft your verbal response in 'speak' (2 to 3 sentences maximum, authentic British butler cadence like Paul Bettany in Iron Man, polite, witty, articulate, NO markdown formatting).
-3. DESKTOP ACTIONS: If the request requires interacting with the PC, select the appropriate concrete steps ('steps'). If purely conversational, advice, or discussion, 'steps' can be empty.
+3. DESKTOP ACTIONS: If the request requires interacting with the PC, you MUST select the appropriate concrete steps ('steps').
+CRITICAL: When Sir asks to open, launch, run, focus, close, or interact with an application (e.g. "open notepad", "open chrome", "launch calculator"):
+You MUST include the concrete action in 'steps'! For example:
+{{"action": "open_app", "target": "notepad"}}
+Do NOT only speak about it — you must provide the action in 'steps' so the operating system can execute it!
 
 Available Actions for 'steps':
 - {{"action": "open_app", "target": "app_or_file_name"}}
@@ -284,71 +288,80 @@ Output ONLY a single valid JSON object:
                     )
                 )
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                fut = executor.submit(_call)
-                try:
-                    resp = fut.result(timeout=15)
-                    raw_text = resp.text.strip()
-                    raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
-                    raw_text = re.sub(r"\s*```$", "", raw_text)
-                    data = json.loads(raw_text)
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            fut = executor.submit(_call)
+            try:
+                resp = fut.result(timeout=10)
+                raw_text = resp.text.strip()
+                raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
+                raw_text = re.sub(r"\s*```$", "", raw_text)
+                data = json.loads(raw_text)
 
-                    thought = data.get("thought", "").strip()
-                    speak_text = data.get("speak", "").strip()
-                    speak_text = re.sub(r"[\*#`_]", "", speak_text).strip()
-                    steps = data.get("steps", [])
+                thought = data.get("thought", "").strip()
+                speak_text = data.get("speak", "").strip()
+                speak_text = re.sub(r"[\*#`_]", "", speak_text).strip()
+                steps = data.get("steps", [])
 
-                    # On cloud: strip ALL non-speak steps (safety guardrail)
-                    if IS_CLOUD:
-                        steps = [s for s in steps if s.get("action") == "speak"]
+                # On cloud: strip ALL non-speak steps (safety guardrail)
+                if IS_CLOUD:
+                    steps = [s for s in steps if s.get("action") == "speak"]
+                else:
+                    # Desktop Action Guarantee: Ensure execution steps exist if user asked for an action
+                    norm_cmd = self._normalize_intent(user_text).lower()
+                    m_open = re.match(r"^(?:open|launch|start|run)\s+(.+?)$", norm_cmd)
+                    if m_open:
+                        target = m_open.group(1).strip()
+                        if target not in ["this", "that", "it"]:
+                            has_open = any(s.get("action") in ("open_app", "shell", "apk_action") for s in steps)
+                            if not has_open:
+                                logger.info(f"[Brain/Cognition] Action Guarantee: Added missing open_app for '{target}'")
+                                steps.insert(0, {"action": "open_app", "target": target})
 
-                    # Ensure spoken response is included in execution
-                    if speak_text:
-                        has_speak = any(s.get("action") == "speak" for s in steps)
-                        if not has_speak:
-                            steps = [{"action": "speak", "text": speak_text}]
+                    m_close = re.match(r"^(?:close|quit|exit|kill)\s+(.+?)$", norm_cmd)
+                    if m_close:
+                        target = m_close.group(1).strip()
+                        has_close = any(s.get("action") == "close_window" for s in steps)
+                        if not has_close:
+                            steps.insert(0, {"action": "close_window", "target": target})
 
-                    logger.info(f"[Brain/Cognition] Thought: '{thought}'")
-                    logger.info(f"[Brain/Cognition] Spoken: '{speak_text}'")
-                    logger.info(f"[Brain/Cognition] Steps ({len(steps)}): {steps}")
+                # Ensure spoken response is included in execution
+                if speak_text:
+                    has_speak = any(s.get("action") == "speak" for s in steps)
+                    if not has_speak:
+                        steps.append({"action": "speak", "text": speak_text})
 
+                logger.info(f"[Brain/Cognition] Thought: '{thought}'")
+                logger.info(f"[Brain/Cognition] Spoken: '{speak_text}'")
+                logger.info(f"[Brain/Cognition] Steps ({len(steps)}): {steps}")
+
+                return ActionPlan(
+                    steps=steps,
+                    explanation=thought or speak_text,
+                    thought=thought,
+                    spoken_text=speak_text
+                )
+
+            except concurrent.futures.TimeoutError:
+                logger.warning("[Brain/Cognition] Cognitive thinking timed out (10s). Falling back to local rules.")
+                return None
+            except json.JSONDecodeError as je:
+                logger.warning(f"[Brain/Cognition] JSON decode error: {je}")
+                # Try to salvage a plain text response
+                if raw_text and len(raw_text) > 10:
+                    fallback_speak = raw_text[:300]
                     return ActionPlan(
-                        steps=steps,
-                        explanation=thought or speak_text,
-                        thought=thought,
-                        spoken_text=speak_text
+                        steps=[{"action": "speak", "text": fallback_speak}],
+                        explanation="raw text fallback",
+                        thought="JSON parse failed; using raw response.",
+                        spoken_text=fallback_speak
                     )
-
-                except concurrent.futures.TimeoutError:
-                    logger.warning("[Brain/Cognition] Cognitive thinking timed out (15s).")
-                    timeout_msg = "My apologies, Sir — the neural core took a moment longer than anticipated. Please try again."
-                    return ActionPlan(
-                        steps=[{"action": "speak", "text": timeout_msg}],
-                        explanation="timeout",
-                        thought="Gemini API response timed out.",
-                        spoken_text=timeout_msg
-                    )
-                except json.JSONDecodeError as je:
-                    logger.warning(f"[Brain/Cognition] JSON decode error: {je}")
-                    # Try to salvage a plain text response
-                    if raw_text and len(raw_text) > 10:
-                        fallback_speak = raw_text[:300]
-                        return ActionPlan(
-                            steps=[{"action": "speak", "text": fallback_speak}],
-                            explanation="raw text fallback",
-                            thought="JSON parse failed; using raw response.",
-                            spoken_text=fallback_speak
-                        )
+                return None
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
 
         except Exception as e:
             logger.error(f"[Brain/Cognition] Error during autonomous reasoning: {e}")
-            error_msg = "I encountered a momentary cognitive hiccup, Sir. The neural pathways are recalibrating."
-            return ActionPlan(
-                steps=[{"action": "speak", "text": error_msg}],
-                explanation=f"error: {e}",
-                thought=f"Exception in cognition engine: {e}",
-                spoken_text=error_msg
-            )
+            return None
 
         return None
 

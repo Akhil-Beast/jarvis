@@ -24,7 +24,16 @@ from pydantic import BaseModel
 
 from config.settings import config
 from core.safety import logger
-from core.brain import brain
+from core.brain import brain, IS_CLOUD
+
+orchestrator = None
+if not IS_CLOUD and sys.platform == "win32":
+    try:
+        from automation.orchestrator import TaskOrchestrator
+        orchestrator = TaskOrchestrator()
+        logger.info("[Server] Desktop TaskOrchestrator enabled for local Windows app execution.")
+    except Exception as e:
+        logger.warning(f"[Server] TaskOrchestrator unavailable: {e}")
 
 BASE_DIR = Path(__file__).resolve().parent
 START_TIME = time.time()
@@ -183,6 +192,11 @@ async def chat(req: ChatRequest):
         spoken = getattr(plan, "spoken_text", None) or plan.explanation or "At your service, sir."
         thought = getattr(plan, "thought", "") or "Evaluating request and situational context."
 
+        # Execute desktop automation actions if running locally on Windows
+        if orchestrator and plan.steps and not IS_CLOUD:
+            logger.info(f"[Server] Executing {len(plan.steps)} automation steps on local desktop for: '{user_text}'")
+            orchestrator.execute_plan_async(plan)
+
         audio_url = f"/api/tts?text={urllib.parse.quote(spoken)}"
 
         return {
@@ -192,6 +206,7 @@ async def chat(req: ChatRequest):
             "spoken_text": spoken,
             "explanation": plan.explanation,
             "steps": plan.steps,
+            "is_cloud": IS_CLOUD,
             "audio_url": audio_url,
             "latency_seconds": round(elapsed, 2)
         }
@@ -649,7 +664,30 @@ async def web_hud(request: Request):
 
                 // Append JARVIS response
                 const replyText = data.spoken_text || data.explanation;
-                appendMessage('jarvis', replyText);
+                
+                // Detect common web application intents for seamless browser opening
+                let actionHtml = '';
+                const lowerCmd = query.toLowerCase();
+                const webAppMap = {
+                    'youtube': { name: 'YouTube', url: 'https://www.youtube.com' },
+                    'google': { name: 'Google Search', url: 'https://www.google.com' },
+                    'chrome': { name: 'Google Chrome', url: 'https://www.google.com' },
+                    'github': { name: 'GitHub', url: 'https://github.com' },
+                    'gmail': { name: 'Gmail', url: 'https://mail.google.com' },
+                    'spotify': { name: 'Spotify Web', url: 'https://open.spotify.com' },
+                    'twitter': { name: 'X / Twitter', url: 'https://x.com' },
+                    'reddit': { name: 'Reddit', url: 'https://www.reddit.com' },
+                    'calculator': { name: 'Calculator', url: 'https://www.google.com/search?q=calculator' }
+                };
+
+                for (const [key, app] of Object.entries(webAppMap)) {
+                    if (lowerCmd.includes(key)) {
+                        actionHtml = `<div style="margin-top: 10px;"><a href="${app.url}" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items: center; gap: 6px; padding: 6px 14px; background: rgba(0, 229, 255, 0.15); border: 1px solid #00e5ff; color: #00e5ff; border-radius: 6px; text-decoration: none; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; transition: all 0.2s ease;"><span>🚀</span> Open ${app.name} ↗</a></div>`;
+                        break;
+                    }
+                }
+
+                appendMessage('jarvis', replyText + actionHtml);
 
                 // Play British Neural Speech Audio
                 if (data.audio_url) {
