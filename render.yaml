@@ -19,3 +19,7 @@ services:
         value: edge_tts
       - key: EDGE_TTS_VOICE
         value: en-GB-RyanNeural
+      - key: RENDER
+        value: "true"
+      - key: CLOUD_MODE
+        value: "true"

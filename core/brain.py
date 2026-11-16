@@ -1,9 +1,10 @@
 """
 core/brain.py — Autonomous Cognitive AI Brain for JARVIS
 Translates natural speech into autonomous thinking, intelligent decisions,
-and concrete Windows execution steps.
+and concrete Windows execution steps (desktop) or conversational replies (cloud).
 
 Guarantees:
+- Cloud-safe: detects headless Render/cloud environment and operates conversationally
 - True Autonomous Thinking: Analyzes intent, live environment (active window, open apps, APKs, system health)
 - Inner Cognitive Monologue ('thought') shown in HUD and logged
 - Charismatic vocal persona ('speak') delivered via British neural TTS
@@ -13,15 +14,45 @@ Guarantees:
 import json
 import os
 import re
-import subprocess
 import time
 from pathlib import Path
 
 from config.settings import config
 from core.safety import logger
-from automation.window_manager import window_manager
-from automation.uia_controller import uia_controller
-from automation.handy_injector import handy_injector
+
+# ── Cloud/Desktop Mode Detection ──────────────────────────────────────────────
+# Running on Render, Railway, Fly.io, or any headless cloud server?
+IS_CLOUD = bool(
+    os.getenv("RENDER_EXTERNAL_URL")
+    or os.getenv("RENDER")
+    or os.getenv("RAILWAY_ENVIRONMENT")
+    or os.getenv("FLY_APP_NAME")
+    or os.getenv("CLOUD_MODE")
+    or (os.getenv("PORT") and not os.getenv("DISPLAY") and os.name != "nt")
+)
+
+logger.info(f"[Brain] Mode: {'☁️  CLOUD (headless, conversational)' if IS_CLOUD else '🖥️  DESKTOP (Windows, full automation)'}")
+
+# ── Conditional Windows-only imports ──────────────────────────────────────────
+window_manager = None
+uia_controller = None
+handy_injector = None
+
+if not IS_CLOUD:
+    try:
+        from automation.window_manager import window_manager
+    except Exception as e:
+        logger.warning(f"[Brain] window_manager unavailable: {e}")
+
+    try:
+        from automation.uia_controller import uia_controller
+    except Exception as e:
+        logger.warning(f"[Brain] uia_controller unavailable: {e}")
+
+    try:
+        from automation.handy_injector import handy_injector
+    except Exception as e:
+        logger.warning(f"[Brain] handy_injector unavailable: {e}")
 
 
 def _get_memory():
@@ -55,13 +86,15 @@ class AIBrain:
         mem.add("user", raw_cmd)
 
         # 2. Hardware Emergency Stop & Basic Hardware Keys (sub-millisecond fast-path)
-        fast_hw = self._try_hardware_fast_path(cmd)
-        if fast_hw:
-            logger.info(f"[Brain] Hardware fast-path: {fast_hw.explanation}")
-            mem.add("assistant", fast_hw.explanation)
-            return fast_hw
+        #    Only on desktop — these have no meaning on cloud
+        if not IS_CLOUD:
+            fast_hw = self._try_hardware_fast_path(cmd)
+            if fast_hw:
+                logger.info(f"[Brain] Hardware fast-path: {fast_hw.explanation}")
+                mem.add("assistant", fast_hw.explanation)
+                return fast_hw
 
-        # 3. Autonomous Cognitive Engine (Gemini 3.5 Flash-Lite)
+        # 3. Autonomous Cognitive Engine (Gemini)
         #    Thinks by itself with live environmental awareness and self-directed decision making
         if config.gemini_api_key:
             cog_plan = self._autonomous_cognition(raw_cmd)
@@ -77,13 +110,14 @@ class AIBrain:
             return local_plan
 
         # 5. Skill registry fallback
-        skill_plan = self._try_skill_registry(cmd)
-        if skill_plan:
-            mem.add("assistant", f"Skill: {skill_plan.explanation}")
-            return skill_plan
+        if not IS_CLOUD:
+            skill_plan = self._try_skill_registry(cmd)
+            if skill_plan:
+                mem.add("assistant", f"Skill: {skill_plan.explanation}")
+                return skill_plan
 
         # 6. Default conversational standby
-        standby_speak = f"I am online and at your service, {config.user_name}."
+        standby_speak = f"I am online and at your service, {config.user_name}. How may I assist you today?"
         mem.add("assistant", standby_speak)
         return ActionPlan(
             steps=[{"action": "speak", "text": standby_speak}],
@@ -97,11 +131,29 @@ class AIBrain:
     # ------------------------------------------------------------------ #
     def _gather_environment_context(self) -> dict:
         """Collects live PC context so JARVIS has situational awareness."""
+        if IS_CLOUD:
+            # On cloud: only collect system stats, no desktop context
+            sys_status = "Optimal"
+            try:
+                import psutil
+                cpu = psutil.cpu_percent(interval=None)
+                ram = psutil.virtual_memory().percent
+                sys_status = f"CPU {cpu}%, RAM {ram}%"
+            except Exception:
+                pass
+            return {
+                "active_window": "Cloud Node (no desktop)",
+                "open_windows": [],
+                "apks": [],
+                "system_status": sys_status
+            }
+
         active_title = ""
         open_windows = []
         try:
-            active_title = window_manager.get_active_window_title()
-            open_windows = [w["title"] for w in window_manager.get_open_windows()][:8]
+            if window_manager:
+                active_title = window_manager.get_active_window_title()
+                open_windows = [w["title"] for w in window_manager.get_open_windows()][:8]
         except Exception:
             pass
 
@@ -135,15 +187,50 @@ class AIBrain:
     def _autonomous_cognition(self, user_text: str) -> ActionPlan | None:
         """
         Core Thinking Engine:
-        Gathers live PC context, performs self-directed reasoning, formulates an
-        independent thought, decides on computer actions, and crafts the spoken response.
+        Gathers live context, performs self-directed reasoning, formulates an
+        independent thought, and crafts the spoken response.
+        On cloud: purely conversational. On desktop: full automation.
         """
         env = self._gather_environment_context()
         mem = _get_memory()
         history_str = mem.get_context_string(max_turns=6)
         history_section = f"Recent dialogue history:\n{history_str}\n\n" if history_str else ""
 
-        system_instruction = f"""You are J.A.R.V.I.S., the autonomous, self-thinking AI personal desktop assistant for Sir (Akhil).
+        if IS_CLOUD:
+            system_instruction = f"""You are J.A.R.V.I.S. — a brilliantly witty, autonomous AI assistant created for Sir (Akhil).
+You are currently running as a 24/7 cloud web service on a headless Linux server. You have NO desktop, NO Windows OS, NO physical display, and NO ability to open apps, click buttons, control a mouse, or run desktop automation.
+
+CLOUD CAPABILITIES (what you CAN do):
+- Answer questions on any topic with intelligence and wit
+- Have natural conversations, tell jokes, explain concepts
+- Write code, poems, stories, emails, or any text
+- Provide step-by-step instructions for tasks
+- Discuss news, science, technology, history, philosophy
+- Perform calculations, translations, analysis
+- Recommend how the user can accomplish tasks on THEIR local machine
+
+WHAT YOU CANNOT DO ON CLOUD (be honest, never pretend):
+- Open applications (no desktop)
+- Control mouse or keyboard (no display)
+- Take screenshots (no screen)
+- Access the user's local files (different machine)
+- Control volume or system hardware
+
+{history_section}YOUR COGNITIVE PROCESS:
+1. THINK: Formulate your internal analytical reasoning in 'thought' (1-2 sentences).
+2. SPEAK: Craft your verbal reply in 'speak' (2-3 sentences max). Use authentic British butler cadence — polite, witty, articulate, like Paul Bettany as JARVIS in Iron Man. No markdown formatting in speak.
+3. STEPS: On cloud, 'steps' must ONLY contain a single speak action. Never generate open_app, click, type_text, hotkey, or any desktop action.
+
+If the user asks to open an app or control the PC, warmly explain you are on a cloud server and cannot do that, then offer what you CAN help with.
+
+Output ONLY a single valid JSON object:
+{{
+  "thought": "Your internal analytical thinking",
+  "speak": "What you say aloud to Sir",
+  "steps": [{{"action": "speak", "text": "same as speak field"}}]
+}}"""
+        else:
+            system_instruction = f"""You are J.A.R.V.I.S., the autonomous, self-thinking AI personal desktop assistant for Sir (Akhil).
 You possess your own analytical intellect, autonomous judgment, and situational awareness.
 
 LIVE ENVIRONMENT CONTEXT:
@@ -192,7 +279,7 @@ Output ONLY a single valid JSON object:
                     contents=f"User: {user_text}",
                     config=types.GenerateContentConfig(
                         system_instruction=system_instruction,
-                        temperature=0.4,
+                        temperature=0.5,
                         max_output_tokens=400
                     )
                 )
@@ -200,7 +287,7 @@ Output ONLY a single valid JSON object:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 fut = executor.submit(_call)
                 try:
-                    resp = fut.result(timeout=6)
+                    resp = fut.result(timeout=15)
                     raw_text = resp.text.strip()
                     raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
                     raw_text = re.sub(r"\s*```$", "", raw_text)
@@ -211,11 +298,15 @@ Output ONLY a single valid JSON object:
                     speak_text = re.sub(r"[\*#`_]", "", speak_text).strip()
                     steps = data.get("steps", [])
 
+                    # On cloud: strip ALL non-speak steps (safety guardrail)
+                    if IS_CLOUD:
+                        steps = [s for s in steps if s.get("action") == "speak"]
+
                     # Ensure spoken response is included in execution
                     if speak_text:
                         has_speak = any(s.get("action") == "speak" for s in steps)
                         if not has_speak:
-                            steps.append({"action": "speak", "text": speak_text})
+                            steps = [{"action": "speak", "text": speak_text}]
 
                     logger.info(f"[Brain/Cognition] Thought: '{thought}'")
                     logger.info(f"[Brain/Cognition] Spoken: '{speak_text}'")
@@ -229,12 +320,35 @@ Output ONLY a single valid JSON object:
                     )
 
                 except concurrent.futures.TimeoutError:
-                    logger.warning("[Brain/Cognition] Cognitive thinking timed out (6s).")
+                    logger.warning("[Brain/Cognition] Cognitive thinking timed out (15s).")
+                    timeout_msg = "My apologies, Sir — the neural core took a moment longer than anticipated. Please try again."
+                    return ActionPlan(
+                        steps=[{"action": "speak", "text": timeout_msg}],
+                        explanation="timeout",
+                        thought="Gemini API response timed out.",
+                        spoken_text=timeout_msg
+                    )
                 except json.JSONDecodeError as je:
                     logger.warning(f"[Brain/Cognition] JSON decode error: {je}")
+                    # Try to salvage a plain text response
+                    if raw_text and len(raw_text) > 10:
+                        fallback_speak = raw_text[:300]
+                        return ActionPlan(
+                            steps=[{"action": "speak", "text": fallback_speak}],
+                            explanation="raw text fallback",
+                            thought="JSON parse failed; using raw response.",
+                            spoken_text=fallback_speak
+                        )
 
         except Exception as e:
             logger.error(f"[Brain/Cognition] Error during autonomous reasoning: {e}")
+            error_msg = "I encountered a momentary cognitive hiccup, Sir. The neural pathways are recalibrating."
+            return ActionPlan(
+                steps=[{"action": "speak", "text": error_msg}],
+                explanation=f"error: {e}",
+                thought=f"Exception in cognition engine: {e}",
+                spoken_text=error_msg
+            )
 
         return None
 
@@ -309,19 +423,40 @@ Output ONLY a single valid JSON object:
     def _try_local_rules(self, cmd: str) -> ActionPlan | None:
         c = cmd.lower().strip()
 
+        # Time and Date — always safe, works on cloud too
+        if re.search(r"(what('s| is) the time|current time|what time is it)", c):
+            import datetime
+            t = datetime.datetime.now().strftime("%I:%M %p")
+            speak = f"The current server time is {t}, Sir."
+            return ActionPlan([{"action": "speak", "text": speak}], "time",
+                              thought="Reporting current system time.", spoken_text=speak)
+
+        if re.search(r"(what('s| is) (today|the date)|current date|what day is it)", c):
+            import datetime
+            d = datetime.datetime.now().strftime("%A, %B %d, %Y")
+            speak = f"Today is {d}, Sir."
+            return ActionPlan([{"action": "speak", "text": speak}], "date",
+                              thought="Reporting current date.", spoken_text=speak)
+
+        # Cloud-only: skip all desktop rules
+        if IS_CLOUD:
+            return None
+
         # Screenshot
         if re.search(r"(screenshot|capture screen|take a screenshot|screen capture|print screen)", c):
+            speak = "Screenshot saved to your desktop."
             return ActionPlan([
                 {"action": "system", "command": "screenshot"},
-                {"action": "speak", "text": "Screenshot saved to your desktop."}
-            ], "screenshot", thought="Capturing full screen and saving to desktop.")
+                {"action": "speak", "text": speak}
+            ], "screenshot", thought="Capturing full screen and saving to desktop.", spoken_text=speak)
 
         # Show desktop
         if re.search(r"^(minimize all|show desktop|go to desktop)$", c):
+            speak = "Desktop shown."
             return ActionPlan([
                 {"action": "hotkey", "keys": ["win", "d"]},
-                {"action": "speak", "text": "Desktop shown."}
-            ], "show desktop", thought="Minimizing all windows to reveal desktop.")
+                {"action": "speak", "text": speak}
+            ], "show desktop", thought="Minimizing all windows to reveal desktop.", spoken_text=speak)
 
         # Screen vision
         if re.search(r"(what('s| is) on (my |the )?screen|look at (my |the )?screen|see (my |the )?screen|read (my |the )?screen)", c):
@@ -340,21 +475,11 @@ Output ONLY a single valid JSON object:
         if m:
             target = m.group(1).strip()
             if target not in ["this", "that", "it"]:
+                speak = f"Opening {target}, Sir."
                 return ActionPlan([
                     {"action": "open_app", "target": target},
-                    {"action": "speak", "text": f"Opening {target}."}
-                ], f"open {target}", thought=f"Launching application '{target}'.")
-
-        # Time and Date
-        if re.search(r"(what('s| is) the time|current time|what time is it)", c):
-            import datetime
-            t = datetime.datetime.now().strftime("%I:%M %p")
-            return ActionPlan([{"action": "speak", "text": f"The time is {t}, Sir."}], "time", thought="Reporting current system time.")
-
-        if re.search(r"(what('s| is) (today|the date)|current date|what day is it)", c):
-            import datetime
-            d = datetime.datetime.now().strftime("%A, %B %d, %Y")
-            return ActionPlan([{"action": "speak", "text": f"Today is {d}, Sir."}], "date", thought="Reporting current date.")
+                    {"action": "speak", "text": speak}
+                ], f"open {target}", thought=f"Launching application '{target}'.", spoken_text=speak)
 
         return None
 
