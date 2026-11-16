@@ -559,6 +559,15 @@ async def web_hud(request: Request):
             </div>
         </div>
 
+        <div class="app-deck" style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; padding: 4px 0;">
+            <button type="button" class="app-chip" onclick="sendCommand('Open YouTube')" style="padding: 6px 14px; font-family: 'Orbitron', sans-serif; font-size: 11px; font-weight: 700; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; border-radius: 9999px; cursor: pointer; transition: all 0.2s ease;">📺 YouTube</button>
+            <button type="button" class="app-chip" onclick="sendCommand('Open Spotify')" style="padding: 6px 14px; font-family: 'Orbitron', sans-serif; font-size: 11px; font-weight: 700; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: #6ee7b7; border-radius: 9999px; cursor: pointer; transition: all 0.2s ease;">🎵 Spotify</button>
+            <button type="button" class="app-chip" onclick="sendCommand('Open Discord')" style="padding: 6px 14px; font-family: 'Orbitron', sans-serif; font-size: 11px; font-weight: 700; background: rgba(99, 102, 241, 0.15); border: 1px solid rgba(99, 102, 241, 0.4); color: #a5b4fc; border-radius: 9999px; cursor: pointer; transition: all 0.2s ease;">💬 Discord</button>
+            <button type="button" class="app-chip" onclick="sendCommand('Open Google')" style="padding: 6px 14px; font-family: 'Orbitron', sans-serif; font-size: 11px; font-weight: 700; background: rgba(14, 165, 233, 0.15); border: 1px solid rgba(14, 165, 233, 0.4); color: #7dd3fc; border-radius: 9999px; cursor: pointer; transition: all 0.2s ease;">🔍 Google</button>
+            <button type="button" class="app-chip" onclick="sendCommand('Open GitHub')" style="padding: 6px 14px; font-family: 'Orbitron', sans-serif; font-size: 11px; font-weight: 700; background: rgba(248, 250, 252, 0.15); border: 1px solid rgba(248, 250, 252, 0.3); color: #e2e8f0; border-radius: 9999px; cursor: pointer; transition: all 0.2s ease;">💻 GitHub</button>
+            <button type="button" class="app-chip" onclick="sendCommand('Open Calculator')" style="padding: 6px 14px; font-family: 'Orbitron', sans-serif; font-size: 11px; font-weight: 700; background: rgba(251, 191, 36, 0.15); border: 1px solid rgba(251, 191, 36, 0.4); color: #fde68a; border-radius: 9999px; cursor: pointer; transition: all 0.2s ease;">🧮 Calculator</button>
+        </div>
+
         <div class="input-bar">
             <button id="btnMic" class="btn-mic" title="Voice Recognition (Click to Speak)">🎤</button>
             <div class="input-wrap">
@@ -665,26 +674,56 @@ async def web_hud(request: Request):
                 // Append JARVIS response
                 const replyText = data.spoken_text || data.explanation;
                 
-                // Detect common web application intents for seamless browser opening
-                let actionHtml = '';
-                const lowerCmd = query.toLowerCase();
-                const webAppMap = {
-                    'youtube': { name: 'YouTube', url: 'https://www.youtube.com' },
-                    'google': { name: 'Google Search', url: 'https://www.google.com' },
-                    'chrome': { name: 'Google Chrome', url: 'https://www.google.com' },
-                    'github': { name: 'GitHub', url: 'https://github.com' },
-                    'gmail': { name: 'Gmail', url: 'https://mail.google.com' },
-                    'spotify': { name: 'Spotify Web', url: 'https://open.spotify.com' },
-                    'twitter': { name: 'X / Twitter', url: 'https://x.com' },
-                    'reddit': { name: 'Reddit', url: 'https://www.reddit.com' },
-                    'calculator': { name: 'Calculator', url: 'https://www.google.com/search?q=calculator' }
-                };
+                // Detect application URL to open
+                let targetUrl = null;
+                let targetName = null;
 
-                for (const [key, app] of Object.entries(webAppMap)) {
-                    if (lowerCmd.includes(key)) {
-                        actionHtml = `<div style="margin-top: 10px;"><a href="${app.url}" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items: center; gap: 6px; padding: 6px 14px; background: rgba(0, 229, 255, 0.15); border: 1px solid #00e5ff; color: #00e5ff; border-radius: 6px; text-decoration: none; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; transition: all 0.2s ease;"><span>🚀</span> Open ${app.name} ↗</a></div>`;
-                        break;
+                // 1. Check if brain steps contain an explicit open_url action
+                if (Array.isArray(data.steps)) {
+                    for (const step of data.steps) {
+                        if (step.action === 'open_url' && step.url) {
+                            targetUrl = step.url;
+                            targetName = step.target || 'Application';
+                            break;
+                        }
                     }
+                }
+
+                // 2. Fallback to client-side webAppMap if not already in steps
+                if (!targetUrl) {
+                    const lowerCmd = query.toLowerCase();
+                    const webAppMap = {
+                        'youtube': { name: 'YouTube', url: 'https://www.youtube.com' },
+                        'google': { name: 'Google Search', url: 'https://www.google.com' },
+                        'chrome': { name: 'Google Chrome', url: 'https://www.google.com' },
+                        'github': { name: 'GitHub', url: 'https://github.com' },
+                        'gmail': { name: 'Gmail', url: 'https://mail.google.com' },
+                        'spotify': { name: 'Spotify Web', url: 'https://open.spotify.com' },
+                        'discord': { name: 'Discord Web', url: 'https://discord.com/app' },
+                        'twitter': { name: 'X / Twitter', url: 'https://x.com' },
+                        'reddit': { name: 'Reddit', url: 'https://www.reddit.com' },
+                        'calculator': { name: 'Calculator', url: 'https://www.google.com/search?q=calculator' },
+                        'calc': { name: 'Calculator', url: 'https://www.google.com/search?q=calculator' }
+                    };
+
+                    for (const [key, app] of Object.entries(webAppMap)) {
+                        if (lowerCmd.includes(key)) {
+                            targetUrl = app.url;
+                            targetName = app.name;
+                            break;
+                        }
+                    }
+                }
+
+                // 3. Auto-open application in a new browser window/tab!
+                let actionHtml = '';
+                if (targetUrl) {
+                    try {
+                        window.open(targetUrl, '_blank');
+                    } catch (e) {
+                        console.warn('Popup blocked, using direct link');
+                    }
+                    actionHtml = `<div style="margin-top: 10px;"><a href="${targetUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-flex; align-items: center; gap: 8px; padding: 8px 18px; background: linear-gradient(135deg, rgba(0, 229, 255, 0.2), rgba(2, 132, 199, 0.3)); border: 1px solid #00e5ff; color: #00e5ff; border-radius: 8px; text-decoration: none; font-family: 'Orbitron', sans-serif; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; box-shadow: 0 0 12px rgba(0, 229, 255, 0.25); transition: all 0.2s ease;"><span>🚀</span> Open ${targetName || 'Application'} ↗</a></div>`;
                 }
 
                 appendMessage('jarvis', replyText + actionHtml);

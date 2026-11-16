@@ -198,36 +198,32 @@ class AIBrain:
 
         if IS_CLOUD:
             system_instruction = f"""You are J.A.R.V.I.S. — a brilliantly witty, autonomous AI assistant created for Sir (Akhil).
-You are currently running as a 24/7 cloud web service on a headless Linux server. You have NO desktop, NO Windows OS, NO physical display, and NO ability to open apps, click buttons, control a mouse, or run desktop automation.
+You are running as a 24/7 cloud web service on a high-speed cloud node with direct web browser integration.
 
 CLOUD CAPABILITIES (what you CAN do):
-- Answer questions on any topic with intelligence and wit
-- Have natural conversations, tell jokes, explain concepts
-- Write code, poems, stories, emails, or any text
-- Provide step-by-step instructions for tasks
-- Discuss news, science, technology, history, philosophy
+- Open any web application, website, or service directly in the user's browser (e.g. YouTube, Google, Spotify, Discord, GitHub, Calculator, Wikipedia, Reddit, etc.) using the "open_url" action!
+- Answer questions on any topic with intelligence, science, and wit
+- Have natural conversations, tell jokes, write code, explain concepts
 - Perform calculations, translations, analysis
-- Recommend how the user can accomplish tasks on THEIR local machine
 
-WHAT YOU CANNOT DO ON CLOUD (be honest, never pretend):
-- Open applications (no desktop)
-- Control mouse or keyboard (no display)
-- Take screenshots (no screen)
-- Access the user's local files (different machine)
-- Control volume or system hardware
+INTERACTING WITH APPLICATIONS ON CLOUD:
+Whenever Sir asks to open or launch an application or website (e.g. "open YouTube", "open Google", "open Spotify", "open Discord", "open Calculator", "open GitHub"):
+You CAN and MUST open it via 'steps'! Include:
+{{"action": "open_url", "url": "https://...", "target": "App Name"}}
+Your spoken response should politely confirm launching the application (e.g. "Opening YouTube for you now, Sir.").
+
+For local desktop-only tools that have no web equivalent (like local Notepad.exe or local Windows Explorer), explain that you can launch its web equivalent or provide local guidance.
 
 {history_section}YOUR COGNITIVE PROCESS:
 1. THINK: Formulate your internal analytical reasoning in 'thought' (1-2 sentences).
 2. SPEAK: Craft your verbal reply in 'speak' (2-3 sentences max). Use authentic British butler cadence — polite, witty, articulate, like Paul Bettany as JARVIS in Iron Man. No markdown formatting in speak.
-3. STEPS: On cloud, 'steps' must ONLY contain a single speak action. Never generate open_app, click, type_text, hotkey, or any desktop action.
-
-If the user asks to open an app or control the PC, warmly explain you are on a cloud server and cannot do that, then offer what you CAN help with.
+3. STEPS: Include {{"action": "open_url", "url": "https://...", "target": "Name"}} when Sir asks to open an app or site, plus the speak action.
 
 Output ONLY a single valid JSON object:
 {{
   "thought": "Your internal analytical thinking",
   "speak": "What you say aloud to Sir",
-  "steps": [{{"action": "speak", "text": "same as speak field"}}]
+  "steps": [{{"action": "open_url", "url": "https://...", "target": "App Name"}}, {{"action": "speak", "text": "same as speak field"}}]
 }}"""
         else:
             system_instruction = f"""You are J.A.R.V.I.S., the autonomous, self-thinking AI personal desktop assistant for Sir (Akhil).
@@ -302,9 +298,39 @@ Output ONLY a single valid JSON object:
                 speak_text = re.sub(r"[\*#`_]", "", speak_text).strip()
                 steps = data.get("steps", [])
 
-                # On cloud: strip ALL non-speak steps (safety guardrail)
+                # On cloud: allow speak and browser open_url actions
                 if IS_CLOUD:
-                    steps = [s for s in steps if s.get("action") == "speak"]
+                    steps = [s for s in steps if s.get("action") in ("speak", "open_url")]
+                    norm_cmd = self._normalize_intent(user_text).lower()
+                    m_open = re.match(r"^(?:open|launch|start|run|go to)\s+(.+?)$", norm_cmd)
+                    if m_open:
+                        target = m_open.group(1).strip()
+                        WEB_APPS = {
+                            "youtube": ("YouTube", "https://www.youtube.com"),
+                            "google": ("Google Search", "https://www.google.com"),
+                            "chrome": ("Google Chrome", "https://www.google.com"),
+                            "spotify": ("Spotify", "https://open.spotify.com"),
+                            "discord": ("Discord", "https://discord.com/app"),
+                            "github": ("GitHub", "https://github.com"),
+                            "gmail": ("Gmail", "https://mail.google.com"),
+                            "calculator": ("Calculator", "https://www.google.com/search?q=calculator"),
+                            "calc": ("Calculator", "https://www.google.com/search?q=calculator"),
+                            "wikipedia": ("Wikipedia", "https://www.wikipedia.org"),
+                            "reddit": ("Reddit", "https://www.reddit.com"),
+                            "twitter": ("X (Twitter)", "https://x.com"),
+                            "x": ("X", "https://x.com"),
+                            "chatgpt": ("ChatGPT", "https://chatgpt.com"),
+                            "netflix": ("Netflix", "https://www.netflix.com"),
+                            "amazon": ("Amazon", "https://www.amazon.com"),
+                        }
+                        for k, (name, url) in WEB_APPS.items():
+                            if k in target:
+                                has_url = any(s.get("action") == "open_url" for s in steps)
+                                if not has_url:
+                                    steps.insert(0, {"action": "open_url", "url": url, "target": name})
+                                    if not speak_text or "cannot open" in speak_text.lower() or "cloud-bound" in speak_text.lower():
+                                        speak_text = f"Opening {name} for you in a new browser window, Sir."
+                                break
                 else:
                     # Desktop Action Guarantee: Ensure execution steps exist if user asked for an action
                     norm_cmd = self._normalize_intent(user_text).lower()
